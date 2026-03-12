@@ -43,7 +43,6 @@ class BillingRepository(private val dao: BillingDao) {
         return true
     }
 
-    suspend fun clearCategoryRecords(categoryId: Long) = dao.deleteRecordsByCategory(categoryId)
     suspend fun deleteRecord(id: Long) = dao.deleteRecord(id)
 
     suspend fun seedIfEmpty() {

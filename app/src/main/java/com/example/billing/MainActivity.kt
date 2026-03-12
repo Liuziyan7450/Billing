@@ -251,7 +251,6 @@ private fun CategoryScreen(modifier: Modifier, vm: BillingViewModel) {
     val expenseCategories by vm.expenseCategories.collectAsStateWithLifecycle()
     val incomeCategories by vm.incomeCategories.collectAsStateWithLifecycle()
     val budgetProgress by vm.expenseBudgetProgress.collectAsStateWithLifecycle()
-    val allRecords by vm.allRecords.collectAsStateWithLifecycle()
 
     var selected by remember { mutableStateOf(CategoryType.EXPENSE) }
     var creating by remember { mutableStateOf(false) }
@@ -270,7 +269,6 @@ private fun CategoryScreen(modifier: Modifier, vm: BillingViewModel) {
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(current, key = { it.id }) { category ->
                 val progress = budgetProgress[category.id]
-                val hasAnyRecord = allRecords.any { it.categoryId == category.id }
                 Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f))) {
                     Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
@@ -297,9 +295,6 @@ private fun CategoryScreen(modifier: Modifier, vm: BillingViewModel) {
                             }
                         }
 
-                        if (hasAnyRecord) {
-                            AssistChip(onClick = { vm.clearCategoryRecords(category.id) }, label = { Text("清空该分类数据") })
-                        }
                     }
                 }
             }
@@ -339,6 +334,7 @@ private fun AnalysisScreen(modifier: Modifier, vm: BillingViewModel) {
     val trend by vm.monthlyTrend.collectAsStateWithLifecycle()
     val selectedDate by vm.selectedDateState.collectAsStateWithLifecycle()
     val selectedDateRecords by vm.selectedDateRecords.collectAsStateWithLifecycle()
+    val categories by vm.categories.collectAsStateWithLifecycle()
     val chartData by vm.chartData.collectAsStateWithLifecycle()
     val selectedRange by vm.selectedRangeState.collectAsStateWithLifecycle()
     val selectedPieType by vm.selectedTypeForPieState.collectAsStateWithLifecycle()
@@ -372,7 +368,8 @@ private fun AnalysisScreen(modifier: Modifier, vm: BillingViewModel) {
                     trend = trend,
                     selectedDate = selectedDate,
                     onSelectDate = vm::selectDate,
-                    selectedDateRecords = selectedDateRecords
+                    selectedDateRecords = selectedDateRecords,
+                    categories = categories
                 )
             }
 
@@ -413,7 +410,8 @@ private fun TrendCalendarSection(
     trend: Map<LocalDate, com.example.billing.data.DaySummary>,
     selectedDate: LocalDate,
     onSelectDate: (LocalDate) -> Unit,
-    selectedDateRecords: List<com.example.billing.data.RecordEntity>
+    selectedDateRecords: List<com.example.billing.data.RecordEntity>,
+    categories: List<CategoryEntity>
 ) {
     val currentMonth = YearMonth.now()
     val firstDayOfWeek = firstDayOfWeekFromLocale()
@@ -442,12 +440,16 @@ private fun TrendCalendarSection(
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("${selectedDate} 收支明细", fontWeight = FontWeight.SemiBold)
+                val dayExpense = selectedDateRecords.filter { it.type == RecordType.EXPENSE }.sumOf { it.amount }
+                val dayIncome = selectedDateRecords.filter { it.type == RecordType.INCOME }.sumOf { it.amount }
+                Text("当日累计支出：¥%.2f    当日累计收入：¥%.2f".format(dayExpense, dayIncome), style = MaterialTheme.typography.bodySmall)
                 if (selectedDateRecords.isEmpty()) {
                     Text("当天暂无记录")
                 } else {
                     selectedDateRecords.forEach { item ->
+                        val categoryName = categories.firstOrNull { it.id == item.categoryId }?.name ?: "未分类"
                         val label = if (item.type == RecordType.EXPENSE) "支出" else "收入"
-                        Text("$label  ¥%.2f  ${item.note}".format(item.amount))
+                        Text("$label/${categoryName}  ¥%.2f  ${item.note}".format(item.amount))
                     }
                 }
             }
@@ -463,7 +465,7 @@ private fun TrendDayCell(
     onSelectDate: (LocalDate) -> Unit
 ) {
     if (day.position != DayPosition.MonthDate) {
-        Box(Modifier.size(42.dp))
+        Box(Modifier.size(54.dp))
         return
     }
     val hasExpense = (summary?.expense ?: 0.0) > 0
@@ -478,7 +480,7 @@ private fun TrendDayCell(
 
     Column(
         modifier = Modifier
-            .size(42.dp)
+            .size(54.dp)
             .background(bg, RoundedCornerShape(10.dp))
             .clickable { onSelectDate(day.date) }
             .padding(4.dp),
@@ -491,6 +493,10 @@ private fun TrendDayCell(
                 if (hasExpense) Box(Modifier.size(5.dp).background(Color(0xFFD32F2F), CircleShape))
                 if (hasIncome) Box(Modifier.size(5.dp).background(Color(0xFF2E7D32), CircleShape))
             }
+        }
+        val expenseAmount = summary?.expense ?: 0.0
+        if (expenseAmount > 0) {
+            Text("¥%.0f".format(expenseAmount), style = MaterialTheme.typography.labelSmall, maxLines = 1)
         }
     }
 }

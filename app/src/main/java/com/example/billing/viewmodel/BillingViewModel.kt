@@ -122,10 +122,6 @@ class BillingViewModel(private val repository: BillingRepository) : ViewModel() 
         onResult(repository.deleteCategoryIfEmpty(id))
     }
 
-    fun clearCategoryRecords(categoryId: Long) = viewModelScope.launch {
-        repository.clearCategoryRecords(categoryId)
-        refreshTrend()
-    }
 
     fun setRange(range: TimeRange) {
         selectedRange.update { range }
