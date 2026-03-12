@@ -118,7 +118,7 @@ private fun AppScreen(vm: BillingViewModel) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("简记账") },
+                title = { Text("皓运账单") },
                 actions = {
                     IconButton(onClick = { createDocument.launch("billing-backup.json") }) { Icon(Icons.Default.FileDownload, null) }
                     IconButton(onClick = { openDocument.launch(arrayOf("application/json")) }) { Icon(Icons.Default.FileUpload, null) }
@@ -290,7 +290,7 @@ private fun AnalysisScreen(modifier: Modifier, vm: BillingViewModel) {
                 }
             }
             1 -> {
-                Text("本月每日支出（类似日历）", style = MaterialTheme.typography.titleSmall)
+                Text("本月每日支出", style = MaterialTheme.typography.titleSmall)
                 LazyVerticalGrid(columns = GridCells.Fixed(7), verticalArrangement = Arrangement.spacedBy(8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(LocalDate.now().lengthOfMonth()) { idx ->
                         val day = idx + 1
