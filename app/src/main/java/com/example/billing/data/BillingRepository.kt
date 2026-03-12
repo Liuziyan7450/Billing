@@ -26,6 +26,7 @@ class BillingRepository(private val dao: BillingDao) {
     suspend fun addCategory(name: String, emoji: String) = dao.insertCategory(CategoryEntity(name = name, emoji = emoji))
     suspend fun updateCategory(category: CategoryEntity) = dao.updateCategory(category)
     suspend fun deleteCategory(id: Long) = dao.deleteCategory(id)
+    suspend fun deleteRecord(id: Long) = dao.deleteRecord(id)
 
     suspend fun monthlyDailyExpense(): Map<LocalDate, Double> {
         val now = LocalDate.now()

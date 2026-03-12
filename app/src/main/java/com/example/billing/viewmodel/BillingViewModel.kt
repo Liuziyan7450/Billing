@@ -32,6 +32,12 @@ class BillingViewModel(private val repository: BillingRepository) : ViewModel() 
     )
 
     private val timeRange = MutableStateFlow(TimeRange.MONTH)
+    val allRecords = repository.allRecords.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5_000),
+        emptyList()
+    )
+
     private val _monthlyTrend = MutableStateFlow<Map<LocalDate, Double>>(emptyMap())
     val monthlyTrend: StateFlow<Map<LocalDate, Double>> = _monthlyTrend
 
@@ -79,6 +85,10 @@ class BillingViewModel(private val repository: BillingRepository) : ViewModel() 
     fun addCategory(name: String, emoji: String) = viewModelScope.launch { repository.addCategory(name, emoji) }
     fun updateCategory(category: CategoryEntity) = viewModelScope.launch { repository.updateCategory(category) }
     fun deleteCategory(id: Long) = viewModelScope.launch { repository.deleteCategory(id) }
+    fun deleteRecord(id: Long) = viewModelScope.launch {
+        repository.deleteRecord(id)
+        refreshTrend()
+    }
 
     fun exportJson(onResult: (String) -> Unit) = viewModelScope.launch { onResult(repository.exportJson()) }
 

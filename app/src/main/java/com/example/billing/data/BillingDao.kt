@@ -30,6 +30,9 @@ interface BillingDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertRecord(record: RecordEntity)
 
+    @Query("DELETE FROM records WHERE id = :id")
+    suspend fun deleteRecord(id: Long)
+
     @Query("DELETE FROM records")
     suspend fun clearRecords()
 
