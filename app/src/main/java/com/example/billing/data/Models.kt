@@ -9,7 +9,8 @@ data class CategoryEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
     val emoji: String,
-    val categoryType: CategoryType
+    val categoryType: CategoryType,
+    val budgetLimit: Double? = null
 )
 
 @Entity(tableName = "records")
@@ -37,7 +38,8 @@ data class BackupCategory(
     val id: Long,
     val name: String,
     val emoji: String,
-    val categoryType: String = CategoryType.EXPENSE.name
+    val categoryType: String = CategoryType.EXPENSE.name,
+    val budgetLimit: Double? = null
 )
 
 @Serializable

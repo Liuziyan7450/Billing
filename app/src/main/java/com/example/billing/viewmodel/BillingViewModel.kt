@@ -7,7 +7,6 @@ import com.example.billing.data.BillingRepository
 import com.example.billing.data.CategoryEntity
 import com.example.billing.data.CategoryType
 import com.example.billing.data.DaySummary
-import com.example.billing.data.RecordEntity
 import com.example.billing.data.RecordType
 import com.example.billing.data.TimeRange
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -29,6 +28,24 @@ class BillingViewModel(private val repository: BillingRepository) : ViewModel() 
 
     val todayRecords = repository.todayRecords().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val allRecords = repository.allRecords.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val expenseBudgetProgress = combine(expenseCategories, allRecords) { expenseCategories, records ->
+        val now = LocalDate.now()
+        expenseCategories.associate { category ->
+            val monthSpent = records.filter {
+                it.type == RecordType.EXPENSE && it.categoryId == category.id &&
+                    Instant.ofEpochMilli(it.timestamp).atZone(ZoneId.systemDefault()).toLocalDate().let { date ->
+                        date.year == now.year && date.month == now.month
+                    }
+            }.sumOf { it.amount }
+            val hasAnyRecord = records.any { it.categoryId == category.id }
+            category.id to CategoryBudgetProgress(
+                spent = monthSpent,
+                budgetLimit = category.budgetLimit,
+                hasAnyRecord = hasAnyRecord
+            )
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     private val selectedRange = MutableStateFlow(TimeRange.MONTH)
     private val selectedTypeForPie = MutableStateFlow(RecordType.EXPENSE)
@@ -95,12 +112,20 @@ class BillingViewModel(private val repository: BillingRepository) : ViewModel() 
         }
     }
 
-    fun addCategory(name: String, emoji: String, type: CategoryType) = viewModelScope.launch {
-        repository.addCategory(name, emoji, type)
+    fun addCategory(name: String, emoji: String, type: CategoryType, budgetLimit: Double?) = viewModelScope.launch {
+        repository.addCategory(name, emoji, type, budgetLimit)
     }
 
     fun updateCategory(category: CategoryEntity) = viewModelScope.launch { repository.updateCategory(category) }
-    fun deleteCategory(id: Long) = viewModelScope.launch { repository.deleteCategory(id) }
+
+    fun deleteCategory(id: Long, onResult: (Boolean) -> Unit) = viewModelScope.launch {
+        onResult(repository.deleteCategoryIfEmpty(id))
+    }
+
+    fun clearCategoryRecords(categoryId: Long) = viewModelScope.launch {
+        repository.clearCategoryRecords(categoryId)
+        refreshTrend()
+    }
 
     fun setRange(range: TimeRange) {
         selectedRange.update { range }
@@ -133,6 +158,18 @@ class BillingViewModel(private val repository: BillingRepository) : ViewModel() 
 }
 
 data class PieSlice(val name: String, val value: Double)
+
+data class CategoryBudgetProgress(
+    val spent: Double,
+    val budgetLimit: Double?,
+    val hasAnyRecord: Boolean
+) {
+    val ratio: Float
+        get() = when {
+            budgetLimit == null || budgetLimit <= 0 -> 0f
+            else -> (spent / budgetLimit).toFloat().coerceAtLeast(0f)
+        }
+}
 
 class BillingViewModelFactory(private val repository: BillingRepository) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")

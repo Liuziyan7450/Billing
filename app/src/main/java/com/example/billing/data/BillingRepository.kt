@@ -31,12 +31,19 @@ class BillingRepository(private val dao: BillingDao) {
         )
     }
 
-    suspend fun addCategory(name: String, emoji: String, type: CategoryType) {
-        dao.insertCategory(CategoryEntity(name = name, emoji = emoji, categoryType = type))
+    suspend fun addCategory(name: String, emoji: String, type: CategoryType, budgetLimit: Double?) {
+        dao.insertCategory(CategoryEntity(name = name, emoji = emoji, categoryType = type, budgetLimit = budgetLimit))
     }
 
     suspend fun updateCategory(category: CategoryEntity) = dao.updateCategory(category)
-    suspend fun deleteCategory(id: Long) = dao.deleteCategory(id)
+
+    suspend fun deleteCategoryIfEmpty(categoryId: Long): Boolean {
+        if (dao.countRecordsByCategory(categoryId) > 0) return false
+        dao.deleteCategory(categoryId)
+        return true
+    }
+
+    suspend fun clearCategoryRecords(categoryId: Long) = dao.deleteRecordsByCategory(categoryId)
     suspend fun deleteRecord(id: Long) = dao.deleteRecord(id)
 
     suspend fun seedIfEmpty() {
@@ -47,13 +54,13 @@ class BillingRepository(private val dao: BillingDao) {
             "购物" to "🛍️",
             "住房" to "🏠",
             "娱乐" to "🎮"
-        ).forEach { (name, emoji) -> addCategory(name, emoji, CategoryType.EXPENSE) }
+        ).forEach { (name, emoji) -> addCategory(name, emoji, CategoryType.EXPENSE, null) }
 
         listOf(
             "工资" to "💼",
             "红包" to "🧧",
             "其他收入" to "💰"
-        ).forEach { (name, emoji) -> addCategory(name, emoji, CategoryType.INCOME) }
+        ).forEach { (name, emoji) -> addCategory(name, emoji, CategoryType.INCOME, null) }
     }
 
     suspend fun monthlyDailySummary(): Map<LocalDate, DaySummary> {
@@ -89,7 +96,7 @@ class BillingRepository(private val dao: BillingDao) {
 
     suspend fun exportJson(): String {
         val categories = dao.observeCategories().first().map {
-            BackupCategory(it.id, it.name, it.emoji, it.categoryType.name)
+            BackupCategory(it.id, it.name, it.emoji, it.categoryType.name, it.budgetLimit)
         }
         val records = dao.observeAllRecords().first().map {
             BackupRecord(it.amount, it.categoryId, it.type.name, it.note, it.timestamp)
@@ -102,7 +109,7 @@ class BillingRepository(private val dao: BillingDao) {
         dao.clearRecords()
         dao.clearCategories()
         dao.insertCategories(parsed.categories.map {
-            CategoryEntity(it.id, it.name, it.emoji, CategoryType.valueOf(it.categoryType))
+            CategoryEntity(it.id, it.name, it.emoji, CategoryType.valueOf(it.categoryType), it.budgetLimit)
         })
         dao.insertRecords(parsed.records.map {
             RecordEntity(

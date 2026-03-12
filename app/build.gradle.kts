@@ -39,7 +39,6 @@ android {
 }
 
 dependencies {
-    implementation("com.google.android.material:material:1.6.0-alpha01")
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")

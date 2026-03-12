@@ -28,6 +28,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -48,7 +49,9 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -244,8 +247,12 @@ private fun HomeScreen(modifier: Modifier, vm: BillingViewModel) {
 
 @Composable
 private fun CategoryScreen(modifier: Modifier, vm: BillingViewModel) {
+    val context = LocalContext.current
     val expenseCategories by vm.expenseCategories.collectAsStateWithLifecycle()
     val incomeCategories by vm.incomeCategories.collectAsStateWithLifecycle()
+    val budgetProgress by vm.expenseBudgetProgress.collectAsStateWithLifecycle()
+    val allRecords by vm.allRecords.collectAsStateWithLifecycle()
+
     var selected by remember { mutableStateOf(CategoryType.EXPENSE) }
     var creating by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<CategoryEntity?>(null) }
@@ -262,13 +269,36 @@ private fun CategoryScreen(modifier: Modifier, vm: BillingViewModel) {
 
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(current, key = { it.id }) { category ->
+                val progress = budgetProgress[category.id]
+                val hasAnyRecord = allRecords.any { it.categoryId == category.id }
                 Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f))) {
-                    Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("${category.emoji} ${category.name}")
-                        Row {
-                            AssistChip(onClick = { editing = category }, label = { Text("编辑") })
-                            Spacer(Modifier.width(6.dp))
-                            AssistChip(onClick = { vm.deleteCategory(category.id) }, label = { Text("删除") })
+                    Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                            Text("${category.emoji} ${category.name}")
+                            Row {
+                                AssistChip(onClick = { editing = category }, label = { Text("编辑") })
+                                Spacer(Modifier.width(6.dp))
+                                AssistChip(onClick = {
+                                    vm.deleteCategory(category.id) { ok ->
+                                        Toast.makeText(context, if (ok) "已删除分类" else "该分类已有记录，请先清空数据", Toast.LENGTH_SHORT).show()
+                                    }
+                                }, label = { Text("删除") })
+                            }
+                        }
+
+                        if (category.categoryType == CategoryType.EXPENSE) {
+                            Text("预算：${category.budgetLimit?.let { "¥%.2f".format(it) } ?: "未设置"}")
+                            Text("本月已支出：¥%.2f".format(progress?.spent ?: 0.0))
+                            if ((category.budgetLimit ?: 0.0) > 0) {
+                                LinearProgressIndicator(progress = { (progress?.ratio ?: 0f).coerceAtMost(1f) }, modifier = Modifier.fillMaxWidth())
+                                if ((progress?.ratio ?: 0f) > 1f) {
+                                    Text("已超预算 ${(progress!!.ratio * 100).toInt()}%", color = MaterialTheme.colorScheme.error)
+                                }
+                            }
+                        }
+
+                        if (hasAnyRecord) {
+                            AssistChip(onClick = { vm.clearCategoryRecords(category.id) }, label = { Text("清空该分类数据") })
                         }
                     }
                 }
@@ -277,15 +307,26 @@ private fun CategoryScreen(modifier: Modifier, vm: BillingViewModel) {
     }
 
     if (creating) {
-        CategoryDialog(title = "新增分类", onDismiss = { creating = false }) { name, emoji ->
-            vm.addCategory(name, emoji, selected)
+        CategoryDialog(
+            title = "新增分类",
+            isExpense = selected == CategoryType.EXPENSE,
+            onDismiss = { creating = false }
+        ) { name, emoji, budget ->
+            vm.addCategory(name, emoji, selected, budget)
             creating = false
         }
     }
 
     editing?.let { category ->
-        CategoryDialog(title = "编辑分类", defaultName = category.name, defaultEmoji = category.emoji, onDismiss = { editing = null }) { name, emoji ->
-            vm.updateCategory(category.copy(name = name, emoji = emoji))
+        CategoryDialog(
+            title = "编辑分类",
+            defaultName = category.name,
+            defaultEmoji = category.emoji,
+            defaultBudget = category.budgetLimit,
+            isExpense = category.categoryType == CategoryType.EXPENSE,
+            onDismiss = { editing = null }
+        ) { name, emoji, budget ->
+            vm.updateCategory(category.copy(name = name, emoji = emoji, budgetLimit = budget))
             editing = null
         }
     }
@@ -520,7 +561,9 @@ private fun AddRecordSheet(vm: BillingViewModel, onDismiss: () -> Unit, onAdd: (
         amount = amount.dropLast(1).ifBlank { "0" }
     }
 
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(
             Modifier
                 .fillMaxWidth()
@@ -608,11 +651,14 @@ private fun CategoryDialog(
     title: String,
     defaultName: String = "",
     defaultEmoji: String = "🧾",
+    defaultBudget: Double? = null,
+    isExpense: Boolean,
     onDismiss: () -> Unit,
-    onConfirm: (String, String) -> Unit
+    onConfirm: (String, String, Double?) -> Unit
 ) {
     var name by remember { mutableStateOf(defaultName) }
     var emoji by remember { mutableStateOf(defaultEmoji) }
+    var budgetInput by remember { mutableStateOf(defaultBudget?.toString().orEmpty()) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -621,9 +667,21 @@ private fun CategoryDialog(
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("名称") })
                 OutlinedTextField(value = emoji, onValueChange = { emoji = it }, label = { Text("Emoji") })
+                if (isExpense) {
+                    OutlinedTextField(
+                        value = budgetInput,
+                        onValueChange = { budgetInput = it },
+                        label = { Text("预算上限（元）") }
+                    )
+                }
             }
         },
-        confirmButton = { Button(onClick = { onConfirm(name, emoji) }) { Text("确定") } },
+        confirmButton = {
+            Button(onClick = {
+                val budget = if (isExpense) budgetInput.toDoubleOrNull() else null
+                onConfirm(name, emoji, budget)
+            }) { Text("确定") }
+        },
         dismissButton = { Button(onClick = onDismiss) { Text("取消") } }
     )
 }

@@ -39,6 +39,12 @@ interface BillingDao {
     @Query("DELETE FROM records WHERE id = :id")
     suspend fun deleteRecord(id: Long)
 
+    @Query("SELECT COUNT(*) FROM records WHERE categoryId = :categoryId")
+    suspend fun countRecordsByCategory(categoryId: Long): Int
+
+    @Query("DELETE FROM records WHERE categoryId = :categoryId")
+    suspend fun deleteRecordsByCategory(categoryId: Long)
+
     @Query("DELETE FROM records")
     suspend fun clearRecords()
 

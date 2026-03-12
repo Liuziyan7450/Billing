@@ -21,7 +21,7 @@ class Converters {
     fun toCategoryType(value: String): CategoryType = CategoryType.valueOf(value)
 }
 
-@Database(entities = [CategoryEntity::class, RecordEntity::class], version = 2)
+@Database(entities = [CategoryEntity::class, RecordEntity::class], version = 3)
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun billingDao(): BillingDao
