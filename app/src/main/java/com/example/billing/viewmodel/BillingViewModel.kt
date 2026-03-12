@@ -5,6 +5,9 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.billing.data.BillingRepository
 import com.example.billing.data.CategoryEntity
+import com.example.billing.data.CategoryType
+import com.example.billing.data.DaySummary
+import com.example.billing.data.RecordEntity
 import com.example.billing.data.RecordType
 import com.example.billing.data.TimeRange
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -13,66 +16,69 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 
 class BillingViewModel(private val repository: BillingRepository) : ViewModel() {
-    val categories = repository.categories.stateIn(
-        viewModelScope,
-        SharingStarted.WhileSubscribed(5_000),
-        emptyList()
-    )
+    val expenseCategories = repository.expenseCategories.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val incomeCategories = repository.incomeCategories.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val categories = repository.categories.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val todayRecords = repository.todayRecords().stateIn(
-        viewModelScope,
-        SharingStarted.WhileSubscribed(5_000),
-        emptyList()
-    )
+    val todayRecords = repository.todayRecords().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val allRecords = repository.allRecords.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    private val timeRange = MutableStateFlow(TimeRange.MONTH)
-    val allRecords = repository.allRecords.stateIn(
-        viewModelScope,
-        SharingStarted.WhileSubscribed(5_000),
-        emptyList()
-    )
+    private val selectedRange = MutableStateFlow(TimeRange.MONTH)
+    private val selectedTypeForPie = MutableStateFlow(RecordType.EXPENSE)
 
-    private val _monthlyTrend = MutableStateFlow<Map<LocalDate, Double>>(emptyMap())
-    val monthlyTrend: StateFlow<Map<LocalDate, Double>> = _monthlyTrend
+    private val _monthlyTrend = MutableStateFlow<Map<LocalDate, DaySummary>>(emptyMap())
+    val monthlyTrend: StateFlow<Map<LocalDate, DaySummary>> = _monthlyTrend
 
-    val chartData = timeRange.flatMapLatest { range ->
-        combine(repository.categoryTotals(range), categories) { totals, categoryList ->
-            categoryList.mapNotNull { category ->
-                totals[category.id]?.takeIf { it > 0 }?.let { category.name to it }
+    private val selectedDate = MutableStateFlow(LocalDate.now())
+    val selectedDateRecords = selectedDate.flatMapLatest { repository.recordsByDate(it) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val chartData = combine(selectedRange, selectedTypeForPie) { range, type -> range to type }
+        .flatMapLatest { (range, type) ->
+            combine(repository.categoryTotals(range, type), categories) { totals, categoryList ->
+                categoryList.filter { category ->
+                    category.categoryType == if (type == RecordType.EXPENSE) CategoryType.EXPENSE else CategoryType.INCOME
+                }.mapNotNull { category ->
+                    totals[category.id]?.takeIf { it > 0 }?.let { PieSlice(category.name, it) }
+                }
             }
         }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val overview = combine(todayRecords, repository.allRecords) { today, all ->
-        val todayExpense = today.filter { it.type == RecordType.EXPENSE }.sumOf { it.amount }
+    val analysisHeader = allRecords.combine(todayRecords) { all, today ->
         val now = LocalDate.now()
-        val monthExpense = all.filter {
+        val monthRecords = all.filter {
             val date = Instant.ofEpochMilli(it.timestamp).atZone(ZoneId.systemDefault()).toLocalDate()
-            date.year == now.year && date.month == now.month && it.type == RecordType.EXPENSE
+            date.year == now.year && date.month == now.month
         }
-        val avg = if (monthExpense.isEmpty()) 0.0 else monthExpense.sumOf { it.amount } / now.dayOfMonth
-        Overview(todayExpense, avg)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), Overview())
+        val monthExpense = monthRecords.filter { it.type == RecordType.EXPENSE }.sumOf { it.amount }
+        val monthIncome = monthRecords.filter { it.type == RecordType.INCOME }.sumOf { it.amount }
+        val todayExpense = today.filter { it.type == RecordType.EXPENSE }.sumOf { it.amount }
+        Overview(todayExpense, monthExpense, monthIncome, monthIncome - monthExpense)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), Overview())
+
+    val selectedRangeState: StateFlow<TimeRange> = selectedRange
+    val selectedTypeForPieState: StateFlow<RecordType> = selectedTypeForPie
+    val selectedDateState: StateFlow<LocalDate> = selectedDate
 
     init {
         viewModelScope.launch {
-            if (categories.value.isEmpty()) seedCategories()
+            repository.seedIfEmpty()
             refreshTrend()
         }
     }
 
     fun refreshTrend() {
-        viewModelScope.launch { _monthlyTrend.value = repository.monthlyDailyExpense() }
-    }
-
-    fun setRange(range: TimeRange) {
-        timeRange.value = range
+        viewModelScope.launch {
+            _monthlyTrend.value = repository.monthlyDailySummary()
+        }
     }
 
     fun addRecord(amount: Double, categoryId: Long, type: RecordType, note: String) {
@@ -82,12 +88,30 @@ class BillingViewModel(private val repository: BillingRepository) : ViewModel() 
         }
     }
 
-    fun addCategory(name: String, emoji: String) = viewModelScope.launch { repository.addCategory(name, emoji) }
+    fun deleteRecord(id: Long) {
+        viewModelScope.launch {
+            repository.deleteRecord(id)
+            refreshTrend()
+        }
+    }
+
+    fun addCategory(name: String, emoji: String, type: CategoryType) = viewModelScope.launch {
+        repository.addCategory(name, emoji, type)
+    }
+
     fun updateCategory(category: CategoryEntity) = viewModelScope.launch { repository.updateCategory(category) }
     fun deleteCategory(id: Long) = viewModelScope.launch { repository.deleteCategory(id) }
-    fun deleteRecord(id: Long) = viewModelScope.launch {
-        repository.deleteRecord(id)
-        refreshTrend()
+
+    fun setRange(range: TimeRange) {
+        selectedRange.update { range }
+    }
+
+    fun setPieType(type: RecordType) {
+        selectedTypeForPie.update { type }
+    }
+
+    fun selectDate(date: LocalDate) {
+        selectedDate.value = date
     }
 
     fun exportJson(onResult: (String) -> Unit) = viewModelScope.launch { onResult(repository.exportJson()) }
@@ -100,13 +124,15 @@ class BillingViewModel(private val repository: BillingRepository) : ViewModel() 
         }
     }
 
-    private suspend fun seedCategories() {
-        listOf("餐饮" to "🍜", "交通" to "🚌", "购物" to "🛍️", "住房" to "🏠", "娱乐" to "🎮", "医疗" to "💊")
-            .forEach { (name, emoji) -> repository.addCategory(name, emoji) }
-    }
-
-    data class Overview(val todayExpense: Double = 0.0, val monthAvgExpense: Double = 0.0)
+    data class Overview(
+        val todayExpense: Double = 0.0,
+        val monthExpense: Double = 0.0,
+        val monthIncome: Double = 0.0,
+        val monthBalance: Double = 0.0
+    )
 }
+
+data class PieSlice(val name: String, val value: Double)
 
 class BillingViewModelFactory(private val repository: BillingRepository) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")

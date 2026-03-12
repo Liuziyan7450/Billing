@@ -54,6 +54,8 @@ dependencies {
     ksp("androidx.room:room-compiler:2.6.1")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.1")
+    implementation("com.kizitonwose.calendar:compose:2.6.2")
+    implementation("com.github.PhilJay:MPAndroidChart:v3.1.0")
 
     debugImplementation("androidx.compose.ui:ui-tooling:1.7.8")
 }

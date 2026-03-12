@@ -8,7 +8,8 @@ import kotlinx.serialization.Serializable
 data class CategoryEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
-    val emoji: String
+    val emoji: String,
+    val categoryType: CategoryType
 )
 
 @Entity(tableName = "records")
@@ -23,6 +24,8 @@ data class RecordEntity(
 
 enum class RecordType { EXPENSE, INCOME }
 
+enum class CategoryType { EXPENSE, INCOME }
+
 @Serializable
 data class BackupData(
     val categories: List<BackupCategory>,
@@ -30,7 +33,12 @@ data class BackupData(
 )
 
 @Serializable
-data class BackupCategory(val id: Long, val name: String, val emoji: String)
+data class BackupCategory(
+    val id: Long,
+    val name: String,
+    val emoji: String,
+    val categoryType: String = CategoryType.EXPENSE.name
+)
 
 @Serializable
 data class BackupRecord(

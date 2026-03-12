@@ -9,41 +9,45 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Analytics
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.FileDownload
-import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.NavigationBar
@@ -55,29 +59,47 @@ import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.billing.data.AppDatabase
 import com.example.billing.data.BillingRepository
 import com.example.billing.data.CategoryEntity
+import com.example.billing.data.CategoryType
 import com.example.billing.data.RecordType
 import com.example.billing.data.TimeRange
 import com.example.billing.theme.BillingTheme
 import com.example.billing.viewmodel.BillingViewModel
 import com.example.billing.viewmodel.BillingViewModelFactory
+import com.github.mikephil.charting.charts.PieChart
+import com.github.mikephil.charting.data.PieData
+import com.github.mikephil.charting.data.PieDataSet
+import com.github.mikephil.charting.data.PieEntry
+import com.github.mikephil.charting.formatter.PercentFormatter
+import com.kizitonwose.calendar.compose.HorizontalCalendar
+import com.kizitonwose.calendar.compose.rememberCalendarState
+import com.kizitonwose.calendar.core.CalendarDay
+import com.kizitonwose.calendar.core.DayPosition
+import com.kizitonwose.calendar.core.daysOfWeek
+import com.kizitonwose.calendar.core.firstDayOfWeekFromLocale
+import kotlinx.coroutines.launch
 import java.time.LocalDate
+import java.time.YearMonth
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -98,13 +120,14 @@ class MainActivity : ComponentActivity() {
 private fun AppScreen(vm: BillingViewModel) {
     var tab by rememberSaveable { mutableStateOf(0) }
     var showSheet by remember { mutableStateOf(false) }
-    val context = androidx.compose.ui.platform.LocalContext.current
+    val context = LocalContext.current
+    var showDataMenu by remember { mutableStateOf(false) }
 
     val createDocument = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri: Uri? ->
         uri ?: return@rememberLauncherForActivityResult
         vm.exportJson { json ->
             context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(json) }
-            Toast.makeText(context, "导出成功", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "导出成功：billing-backup.json", Toast.LENGTH_SHORT).show()
         }
     }
     val openDocument = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
@@ -118,10 +141,29 @@ private fun AppScreen(vm: BillingViewModel) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("皓运账单") },
+                title = { Text("简记账") },
                 actions = {
-                    IconButton(onClick = { createDocument.launch("billing-backup.json") }) { Icon(Icons.Default.FileDownload, null) }
-                    IconButton(onClick = { openDocument.launch(arrayOf("application/json")) }) { Icon(Icons.Default.FileUpload, null) }
+                    Box {
+                        IconButton(onClick = { showDataMenu = true }) {
+                            Icon(Icons.Default.MoreVert, contentDescription = "数据操作")
+                        }
+                        DropdownMenu(expanded = showDataMenu, onDismissRequest = { showDataMenu = false }) {
+                            DropdownMenuItem(
+                                text = { Text("导入备份（JSON）") },
+                                onClick = {
+                                    showDataMenu = false
+                                    openDocument.launch(arrayOf("application/json"))
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("导出备份（JSON）") },
+                                onClick = {
+                                    showDataMenu = false
+                                    createDocument.launch("billing-backup.json")
+                                }
+                            )
+                        }
+                    }
                 }
             )
         },
@@ -163,27 +205,20 @@ private fun HomeScreen(modifier: Modifier, vm: BillingViewModel) {
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    listOf(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), MaterialTheme.colorScheme.background)
-                )
-            ),
+            .background(Brush.verticalGradient(listOf(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f), MaterialTheme.colorScheme.background))),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         item {
             Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
-                Row(
-                    Modifier.fillMaxWidth().padding(16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
+                Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                     Column {
-                        Text("今日支出", style = MaterialTheme.typography.bodyMedium)
-                        Text("¥%.2f".format(expense), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                        Text("今日支出")
+                        Text("¥%.2f".format(expense), fontWeight = FontWeight.Bold)
                     }
                     Column(horizontalAlignment = Alignment.End) {
-                        Text("今日收入", style = MaterialTheme.typography.bodyMedium)
-                        Text("¥%.2f".format(income), style = MaterialTheme.typography.titleLarge, color = Color(0xFF2E7D32), fontWeight = FontWeight.Bold)
+                        Text("今日收入")
+                        Text("¥%.2f".format(income), color = Color(0xFF2E7D32), fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -191,36 +226,16 @@ private fun HomeScreen(modifier: Modifier, vm: BillingViewModel) {
 
         item { Text("今天 ${LocalDate.now()} 的记录", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) }
 
-        if (records.isEmpty()) {
-            item {
-                Card(Modifier.fillMaxWidth()) {
-                    Text("还没有记录，点右下角 + 开始记账", Modifier.padding(20.dp), textAlign = TextAlign.Center)
-                }
-            }
-        }
-
         items(records, key = { it.id }) { record ->
             val category = categories.firstOrNull { it.id == record.categoryId }
-            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-                Row(
-                    Modifier.fillMaxWidth().padding(14.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+            Card(Modifier.fillMaxWidth()) {
+                Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text("${category?.emoji.orEmpty()} ${category?.name ?: "未分类"}")
-                        Text(record.note.ifBlank { "无备注" }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("${category?.emoji ?: "🧾"} ${category?.name ?: "未分类"}")
+                        Text(record.note.ifBlank { "无备注" }, style = MaterialTheme.typography.bodySmall)
                     }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = (if (record.type == RecordType.EXPENSE) "-" else "+") + "¥%.2f".format(record.amount),
-                            color = if (record.type == RecordType.EXPENSE) MaterialTheme.colorScheme.error else Color(0xFF2E7D32),
-                            fontWeight = FontWeight.Bold
-                        )
-                        IconButton(onClick = { vm.deleteRecord(record.id) }) {
-                            Icon(Icons.Default.Delete, contentDescription = "删除")
-                        }
-                    }
+                    Text((if (record.type == RecordType.EXPENSE) "-" else "+") + "¥%.2f".format(record.amount), fontWeight = FontWeight.Bold)
+                    IconButton(onClick = { vm.deleteRecord(record.id) }) { Icon(Icons.Default.Delete, "删除") }
                 }
             }
         }
@@ -229,16 +244,26 @@ private fun HomeScreen(modifier: Modifier, vm: BillingViewModel) {
 
 @Composable
 private fun CategoryScreen(modifier: Modifier, vm: BillingViewModel) {
-    val categories by vm.categories.collectAsStateWithLifecycle()
-    var editing by remember { mutableStateOf<CategoryEntity?>(null) }
+    val expenseCategories by vm.expenseCategories.collectAsStateWithLifecycle()
+    val incomeCategories by vm.incomeCategories.collectAsStateWithLifecycle()
+    var selected by remember { mutableStateOf(CategoryType.EXPENSE) }
     var creating by remember { mutableStateOf(false) }
+    var editing by remember { mutableStateOf<CategoryEntity?>(null) }
 
-    Column(modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Button(onClick = { creating = true }) { Text("新增分类") }
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            items(categories, key = { it.id }) { category ->
-                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.4f))) {
-                    Row(Modifier.fillMaxWidth().padding(14.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+    val current = if (selected == CategoryType.EXPENSE) expenseCategories else incomeCategories
+
+    Column(modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(selected = selected == CategoryType.EXPENSE, onClick = { selected = CategoryType.EXPENSE }, label = { Text("支出分类") })
+            FilterChip(selected = selected == CategoryType.INCOME, onClick = { selected = CategoryType.INCOME }, label = { Text("收入分类") })
+        }
+
+        Button(onClick = { creating = true }) { Text("新增${if (selected == CategoryType.EXPENSE) "支出" else "收入"}分类") }
+
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(current, key = { it.id }) { category ->
+                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f))) {
+                    Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text("${category.emoji} ${category.name}")
                         Row {
                             AssistChip(onClick = { editing = category }, label = { Text("编辑") })
@@ -251,14 +276,16 @@ private fun CategoryScreen(modifier: Modifier, vm: BillingViewModel) {
         }
     }
 
-    if (creating) CategoryDialog(title = "新增分类", onDismiss = { creating = false }) { name, emoji ->
-        vm.addCategory(name, emoji)
-        creating = false
+    if (creating) {
+        CategoryDialog(title = "新增分类", onDismiss = { creating = false }) { name, emoji ->
+            vm.addCategory(name, emoji, selected)
+            creating = false
+        }
     }
 
-    editing?.let { target ->
-        CategoryDialog(title = "编辑分类", defaultName = target.name, defaultEmoji = target.emoji, onDismiss = { editing = null }) { name, emoji ->
-            vm.updateCategory(target.copy(name = name, emoji = emoji))
+    editing?.let { category ->
+        CategoryDialog(title = "编辑分类", defaultName = category.name, defaultEmoji = category.emoji, onDismiss = { editing = null }) { name, emoji ->
+            vm.updateCategory(category.copy(name = name, emoji = emoji))
             editing = null
         }
     }
@@ -267,11 +294,15 @@ private fun CategoryScreen(modifier: Modifier, vm: BillingViewModel) {
 @Composable
 private fun AnalysisScreen(modifier: Modifier, vm: BillingViewModel) {
     var tab by remember { mutableStateOf(0) }
-    val overview by vm.overview.collectAsStateWithLifecycle()
+    val overview by vm.analysisHeader.collectAsStateWithLifecycle()
     val trend by vm.monthlyTrend.collectAsStateWithLifecycle()
-    val chart by vm.chartData.collectAsStateWithLifecycle()
+    val selectedDate by vm.selectedDateState.collectAsStateWithLifecycle()
+    val selectedDateRecords by vm.selectedDateRecords.collectAsStateWithLifecycle()
+    val chartData by vm.chartData.collectAsStateWithLifecycle()
+    val selectedRange by vm.selectedRangeState.collectAsStateWithLifecycle()
+    val selectedPieType by vm.selectedTypeForPieState.collectAsStateWithLifecycle()
 
-    androidx.compose.runtime.LaunchedEffect(Unit) { vm.refreshTrend() }
+    LaunchedEffect(Unit) { vm.refreshTrend() }
 
     Column(modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         TabRow(selectedTabIndex = tab) {
@@ -282,49 +313,100 @@ private fun AnalysisScreen(modifier: Modifier, vm: BillingViewModel) {
 
         when (tab) {
             0 -> {
-                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.6f))) {
+                Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("当日开支：¥%.2f".format(overview.todayExpense), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                        Text("当月日均开支：¥%.2f".format(overview.monthAvgExpense))
+                        Text("当日支出：¥%.2f".format(overview.todayExpense))
+                        Text("本月支出：¥%.2f".format(overview.monthExpense))
+                        Text("本月收入：¥%.2f".format(overview.monthIncome), color = Color(0xFF2E7D32))
+                        Text("本月结余：¥%.2f".format(overview.monthBalance), fontWeight = FontWeight.Bold)
                     }
                 }
+                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.5f))) {
+                    Text("💡 小贴士：持续记录收入和支出，月底能快速掌握结余变化。", Modifier.padding(14.dp))
+                }
             }
+
             1 -> {
-                Text("本月每日支出", style = MaterialTheme.typography.titleSmall)
-                LazyVerticalGrid(columns = GridCells.Fixed(7), verticalArrangement = Arrangement.spacedBy(8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(LocalDate.now().lengthOfMonth()) { idx ->
-                        val day = idx + 1
-                        val amount = trend[LocalDate.now().withDayOfMonth(day)] ?: 0.0
-                        Card(colors = CardDefaults.cardColors(containerColor = if (amount > 0) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant)) {
-                            Column(Modifier.padding(6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text(day.toString())
-                                Text("¥%.0f".format(amount), style = MaterialTheme.typography.bodySmall)
-                            }
-                        }
-                    }
-                }
+                TrendCalendarSection(
+                    trend = trend,
+                    selectedDate = selectedDate,
+                    onSelectDate = vm::selectDate,
+                    selectedDateRecords = selectedDateRecords
+                )
             }
+
             else -> {
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(TimeRange.entries.toList()) { option ->
-                        AssistChip(onClick = { vm.setRange(option) }, label = { Text(option.label) })
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                    TimeRange.entries.forEach { range ->
+                        FilterChip(
+                            selected = selectedRange == range,
+                            onClick = { vm.setRange(range) },
+                            label = { Text(range.label) }
+                        )
                     }
                 }
 
-                val total = chart.sumOf { it.second }
-                if (chart.isEmpty()) {
-                    Card(Modifier.fillMaxWidth()) {
-                        Text("该时间范围暂无支出数据", Modifier.padding(16.dp))
-                    }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(selected = selectedPieType == RecordType.EXPENSE, onClick = { vm.setPieType(RecordType.EXPENSE) }, label = { Text("支出构成") })
+                    FilterChip(selected = selectedPieType == RecordType.INCOME, onClick = { vm.setPieType(RecordType.INCOME) }, label = { Text("收入构成") })
                 }
-                chart.forEach { (name, value) ->
-                    val ratio = if (total == 0.0) 0f else (value / total).toFloat()
+
+                if (chartData.isEmpty()) {
                     Card(Modifier.fillMaxWidth()) {
-                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text("$name  ¥%.2f".format(value), fontWeight = FontWeight.SemiBold)
-                            LinearProgressIndicator(progress = { ratio }, modifier = Modifier.fillMaxWidth())
-                            Text("占比 %.1f%%".format(ratio * 100), style = MaterialTheme.typography.bodySmall)
-                        }
+                        Text("当前筛选暂无数据", Modifier.padding(16.dp), textAlign = TextAlign.Center)
+                    }
+                } else {
+                    PieChartCard(chartData = chartData.map { it.name to it.value })
+                }
+
+                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f))) {
+                    Text("图表说明：高亮按钮表示当前统计维度，饼图展示各分类占比。", Modifier.padding(12.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TrendCalendarSection(
+    trend: Map<LocalDate, com.example.billing.data.DaySummary>,
+    selectedDate: LocalDate,
+    onSelectDate: (LocalDate) -> Unit,
+    selectedDateRecords: List<com.example.billing.data.RecordEntity>
+) {
+    val currentMonth = YearMonth.now()
+    val firstDayOfWeek = firstDayOfWeekFromLocale()
+    val daysOfWeek = daysOfWeek(firstDayOfWeek)
+    val calendarState = rememberCalendarState(
+        startMonth = currentMonth.minusMonths(6),
+        endMonth = currentMonth.plusMonths(6),
+        firstVisibleMonth = currentMonth,
+        firstDayOfWeek = firstDayOfWeek
+    )
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            daysOfWeek.forEach { day ->
+                Text(day.name.take(2), modifier = Modifier.weight(1f), textAlign = TextAlign.Center, style = MaterialTheme.typography.labelMedium)
+            }
+        }
+
+        HorizontalCalendar(
+            state = calendarState,
+            dayContent = { day ->
+                TrendDayCell(day, trend[day.date], selectedDate == day.date, onSelectDate)
+            }
+        )
+
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("${selectedDate} 收支明细", fontWeight = FontWeight.SemiBold)
+                if (selectedDateRecords.isEmpty()) {
+                    Text("当天暂无记录")
+                } else {
+                    selectedDateRecords.forEach { item ->
+                        val label = if (item.type == RecordType.EXPENSE) "支出" else "收入"
+                        Text("$label  ¥%.2f  ${item.note}".format(item.amount))
                     }
                 }
             }
@@ -332,17 +414,106 @@ private fun AnalysisScreen(modifier: Modifier, vm: BillingViewModel) {
     }
 }
 
+@Composable
+private fun TrendDayCell(
+    day: CalendarDay,
+    summary: com.example.billing.data.DaySummary?,
+    selected: Boolean,
+    onSelectDate: (LocalDate) -> Unit
+) {
+    if (day.position != DayPosition.MonthDate) {
+        Box(Modifier.size(42.dp))
+        return
+    }
+    val hasExpense = (summary?.expense ?: 0.0) > 0
+    val hasIncome = (summary?.income ?: 0.0) > 0
+    val bg = when {
+        selected -> MaterialTheme.colorScheme.primaryContainer
+        hasExpense && hasIncome -> Color(0xFFE8EAF6)
+        hasExpense -> Color(0xFFFFEBEE)
+        hasIncome -> Color(0xFFE8F5E9)
+        else -> MaterialTheme.colorScheme.surfaceVariant
+    }
+
+    Column(
+        modifier = Modifier
+            .size(42.dp)
+            .background(bg, RoundedCornerShape(10.dp))
+            .clickable { onSelectDate(day.date) }
+            .padding(4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text(day.date.dayOfMonth.toString(), style = MaterialTheme.typography.bodySmall)
+        if (hasExpense || hasIncome) {
+            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                if (hasExpense) Box(Modifier.size(5.dp).background(Color(0xFFD32F2F), CircleShape))
+                if (hasIncome) Box(Modifier.size(5.dp).background(Color(0xFF2E7D32), CircleShape))
+            }
+        }
+    }
+}
+
+@Composable
+private fun PieChartCard(chartData: List<Pair<String, Double>>) {
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("分类占比", fontWeight = FontWeight.SemiBold)
+            AndroidView(
+                factory = { ctx ->
+                    PieChart(ctx).apply {
+                        description.isEnabled = false
+                        setUsePercentValues(true)
+                        setDrawEntryLabels(false)
+                        legend.isWordWrapEnabled = true
+                        holeRadius = 55f
+                    }
+                },
+                update = { chart ->
+                    val entries = chartData.map { PieEntry(it.second.toFloat(), it.first) }
+                    val dataSet = PieDataSet(entries, "").apply {
+                        colors = listOf(
+                            android.graphics.Color.parseColor("#EF5350"),
+                            android.graphics.Color.parseColor("#42A5F5"),
+                            android.graphics.Color.parseColor("#66BB6A"),
+                            android.graphics.Color.parseColor("#FFCA28"),
+                            android.graphics.Color.parseColor("#AB47BC")
+                        )
+                        valueTextSize = 12f
+                    }
+                    chart.data = PieData(dataSet).apply {
+                        setValueFormatter(PercentFormatter(chart))
+                    }
+                    chart.invalidate()
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(260.dp)
+            )
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AddRecordSheet(vm: BillingViewModel, onDismiss: () -> Unit, onAdd: (Double, Long, RecordType, String) -> Unit) {
-    val categories by vm.categories.collectAsStateWithLifecycle()
+    val expenseCategories by vm.expenseCategories.collectAsStateWithLifecycle()
+    val incomeCategories by vm.incomeCategories.collectAsStateWithLifecycle()
+    val scope = rememberCoroutineScope()
+
     var amount by remember { mutableStateOf("0") }
     var note by remember { mutableStateOf("") }
-    var selectedCategory by remember { mutableStateOf<Long?>(null) }
     var type by remember { mutableStateOf(RecordType.EXPENSE) }
+    var selectedCategory by remember { mutableStateOf<Long?>(null) }
 
-    fun inputDigit(digit: String) {
-        amount = if (amount == "0" && digit != ".") digit else amount + digit
+    val categoryList = if (type == RecordType.EXPENSE) expenseCategories else incomeCategories
+
+    LaunchedEffect(type, categoryList.size) {
+        selectedCategory = categoryList.firstOrNull()?.id
+    }
+
+    fun inputDigit(d: String) {
+        amount = if (amount == "0" && d != ".") d else amount + d
     }
 
     fun backspace() {
@@ -350,9 +521,15 @@ private fun AddRecordSheet(vm: BillingViewModel, onDismiss: () -> Unit, onAdd: (
     }
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.94f)
+                .padding(16.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
             Text("记一笔", style = MaterialTheme.typography.titleLarge)
-
             Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
                 Text("¥$amount", Modifier.fillMaxWidth().padding(18.dp), style = MaterialTheme.typography.headlineMedium, textAlign = TextAlign.End)
             }
@@ -362,18 +539,14 @@ private fun AddRecordSheet(vm: BillingViewModel, onDismiss: () -> Unit, onAdd: (
                 FilterChip(selected = type == RecordType.INCOME, onClick = { type = RecordType.INCOME }, label = { Text("收入") })
             }
 
-            OutlinedTextField(value = note, onValueChange = { note = it }, label = { Text("备注") }, modifier = Modifier.fillMaxWidth())
-
-            Text("分类")
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(categories, key = { it.id }) { category ->
-                    FilterChip(
-                        selected = selectedCategory == category.id,
-                        onClick = { selectedCategory = category.id },
-                        label = { Text("${category.emoji} ${category.name}") }
-                    )
+            Text(if (type == RecordType.EXPENSE) "支出分类" else "收入分类")
+            Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                categoryList.forEach { category ->
+                    FilterChip(selected = selectedCategory == category.id, onClick = { selectedCategory = category.id }, label = { Text("${category.emoji} ${category.name}") })
                 }
             }
+
+            OutlinedTextField(value = note, onValueChange = { note = it }, label = { Text("备注") }, modifier = Modifier.fillMaxWidth())
 
             NumberPad(
                 onDigit = ::inputDigit,
@@ -384,8 +557,9 @@ private fun AddRecordSheet(vm: BillingViewModel, onDismiss: () -> Unit, onAdd: (
 
             Button(
                 onClick = {
-                    val selected = selectedCategory ?: categories.firstOrNull()?.id ?: return@Button
-                    onAdd(amount.toDoubleOrNull() ?: 0.0, selected, type, note)
+                    val catId = selectedCategory ?: return@Button
+                    onAdd(amount.toDoubleOrNull() ?: 0.0, catId, type, note)
+                    scope.launch { onDismiss() }
                 },
                 modifier = Modifier.fillMaxWidth()
             ) { Text("确认") }

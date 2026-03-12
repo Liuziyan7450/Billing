@@ -12,6 +12,12 @@ interface BillingDao {
     @Query("SELECT * FROM categories ORDER BY id")
     fun observeCategories(): Flow<List<CategoryEntity>>
 
+    @Query("SELECT * FROM categories WHERE categoryType = :type ORDER BY id")
+    fun observeCategoriesByType(type: CategoryType): Flow<List<CategoryEntity>>
+
+    @Query("SELECT COUNT(*) FROM categories")
+    suspend fun countCategories(): Int
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertCategory(category: CategoryEntity)
 

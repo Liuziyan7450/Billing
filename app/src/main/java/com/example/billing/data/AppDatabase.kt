@@ -13,9 +13,15 @@ class Converters {
 
     @TypeConverter
     fun toRecordType(value: String): RecordType = RecordType.valueOf(value)
+
+    @TypeConverter
+    fun fromCategoryType(value: CategoryType): String = value.name
+
+    @TypeConverter
+    fun toCategoryType(value: String): CategoryType = CategoryType.valueOf(value)
 }
 
-@Database(entities = [CategoryEntity::class, RecordEntity::class], version = 1)
+@Database(entities = [CategoryEntity::class, RecordEntity::class], version = 2)
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun billingDao(): BillingDao
@@ -29,7 +35,9 @@ abstract class AppDatabase : RoomDatabase() {
                 context.applicationContext,
                 AppDatabase::class.java,
                 "billing.db"
-            ).build().also { INSTANCE = it }
+            )
+                .fallbackToDestructiveMigration()
+                .build().also { INSTANCE = it }
         }
     }
 }
