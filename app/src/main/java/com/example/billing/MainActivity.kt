@@ -34,7 +34,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Analytics
 import androidx.compose.material.icons.filled.Delete
@@ -71,7 +70,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -114,6 +112,8 @@ import com.kizitonwose.calendar.core.firstDayOfWeekFromLocale
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.YearMonth
+import androidx.core.graphics.toColorInt
+import kotlin.math.absoluteValue
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -140,20 +140,28 @@ private fun AppScreen(vm: BillingViewModel) {
     val context = LocalContext.current
     var showDataMenu by remember { mutableStateOf(false) }
 
-    val createDocument = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri: Uri? ->
-        uri ?: return@rememberLauncherForActivityResult
-        vm.exportJson { json ->
-            context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(json) }
-            Toast.makeText(context, "导出成功：billing-backup.json", Toast.LENGTH_SHORT).show()
+    val createDocument =
+        rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri: Uri? ->
+            uri ?: return@rememberLauncherForActivityResult
+            vm.exportJson { json ->
+                context.contentResolver.openOutputStream(uri)?.bufferedWriter()
+                    ?.use { it.write(json) }
+                Toast.makeText(context, "导出成功：billing-backup.json", Toast.LENGTH_SHORT).show()
+            }
         }
-    }
-    val openDocument = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-        uri ?: return@rememberLauncherForActivityResult
-        val json = context.contentResolver.openInputStream(uri)?.bufferedReader()?.readText().orEmpty()
-        vm.importJson(json) {
-            Toast.makeText(context, if (it.isSuccess) "导入成功" else "导入失败", Toast.LENGTH_SHORT).show()
+    val openDocument =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+            uri ?: return@rememberLauncherForActivityResult
+            val json =
+                context.contentResolver.openInputStream(uri)?.bufferedReader()?.readText().orEmpty()
+            vm.importJson(json) {
+                Toast.makeText(
+                    context,
+                    if (it.isSuccess) "导入成功" else "导入失败",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
         }
-    }
 
     Scaffold(
         topBar = {
@@ -164,7 +172,9 @@ private fun AppScreen(vm: BillingViewModel) {
                         IconButton(onClick = { showDataMenu = true }) {
                             Icon(Icons.Default.MoreVert, contentDescription = "数据操作")
                         }
-                        DropdownMenu(expanded = showDataMenu, onDismissRequest = { showDataMenu = false }) {
+                        DropdownMenu(
+                            expanded = showDataMenu,
+                            onDismissRequest = { showDataMenu = false }) {
                             DropdownMenuItem(text = { Text("导入备份（JSON）") }, onClick = {
                                 showDataMenu = false
                                 openDocument.launch(arrayOf("application/json"))
@@ -180,18 +190,40 @@ private fun AppScreen(vm: BillingViewModel) {
         },
         floatingActionButton = {
             if (tab == 0) {
-                FloatingActionButton(onClick = { showSheet = true }) { Icon(Icons.Default.Add, null) }
+                FloatingActionButton(onClick = { showSheet = true }) {
+                    Icon(
+                        Icons.Default.Add,
+                        null
+                    )
+                }
             }
         },
         bottomBar = {
             NavigationBar {
-                NavigationBarItem(selected = tab == 0, onClick = { scope.launch { pagerState.animateScrollToPage(0) } }, icon = { Icon(Icons.Default.Home, null) }, label = { Text("首页") })
-                NavigationBarItem(selected = tab == 1, onClick = { scope.launch { pagerState.animateScrollToPage(1) } }, icon = { Icon(Icons.Default.List, null) }, label = { Text("分类") })
-                NavigationBarItem(selected = tab == 2, onClick = { scope.launch { pagerState.animateScrollToPage(2) } }, icon = { Icon(Icons.Default.Analytics, null) }, label = { Text("统计") })
+                NavigationBarItem(
+                    selected = tab == 0,
+                    onClick = { scope.launch { pagerState.animateScrollToPage(0) } },
+                    icon = { Icon(Icons.Default.Home, null) },
+                    label = { Text("首页") })
+                NavigationBarItem(
+                    selected = tab == 1,
+                    onClick = { scope.launch { pagerState.animateScrollToPage(1) } },
+                    icon = { Icon(Icons.Default.List, null) },
+                    label = { Text("分类") })
+                NavigationBarItem(
+                    selected = tab == 2,
+                    onClick = { scope.launch { pagerState.animateScrollToPage(2) } },
+                    icon = { Icon(Icons.Default.Analytics, null) },
+                    label = { Text("统计") })
             }
         }
     ) { padding ->
-        HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize().padding(padding)) { page ->
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+        ) { page ->
             when (page) {
                 0 -> HomeScreen(modifier = Modifier.fillMaxSize(), vm = vm)
                 1 -> CategoryScreen(modifier = Modifier.fillMaxSize(), vm = vm)
@@ -201,7 +233,9 @@ private fun AppScreen(vm: BillingViewModel) {
     }
 
     if (showSheet) {
-        AddRecordSheet(vm = vm, onDismiss = { showSheet = false }) { amount, categoryId, type, note ->
+        AddRecordSheet(
+            vm = vm,
+            onDismiss = { showSheet = false }) { amount, categoryId, type, note ->
             vm.addRecord(amount, categoryId, type, note)
             showSheet = false
         }
@@ -218,37 +252,77 @@ private fun HomeScreen(modifier: Modifier, vm: BillingViewModel) {
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .background(Brush.verticalGradient(listOf(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f), MaterialTheme.colorScheme.background))),
+            .background(
+                Brush.verticalGradient(
+                    listOf(
+                        MaterialTheme.colorScheme.surfaceVariant.copy(
+                            alpha = 0.45f
+                        ), MaterialTheme.colorScheme.background
+                    )
+                )
+            ),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         item {
             Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
-                Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
                     Column {
                         Text("今日支出")
                         Text("¥%.2f".format(expense), fontWeight = FontWeight.Bold)
                     }
                     Column(horizontalAlignment = Alignment.End) {
                         Text("今日收入")
-                        Text("¥%.2f".format(income), color = Color(0xFF2E7D32), fontWeight = FontWeight.Bold)
+                        Text(
+                            "¥%.2f".format(income),
+                            color = Color(0xFF2E7D32),
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
             }
         }
 
-        item { Text("今天 ${LocalDate.now()} 的记录", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) }
+        item {
+            Text(
+                "今天 ${LocalDate.now()} 的记录",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+        }
 
         items(records, key = { it.id }) { record ->
             val category = categories.firstOrNull { it.id == record.categoryId }
             Card(Modifier.fillMaxWidth()) {
-                Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Column(Modifier.weight(1f)) {
                         Text("${category?.emoji ?: "🧾"} ${category?.name ?: "未分类"}")
-                        Text(record.note.ifBlank { "无备注" }, style = MaterialTheme.typography.bodySmall)
+                        Text(
+                            record.note.ifBlank { "无备注" },
+                            style = MaterialTheme.typography.bodySmall
+                        )
                     }
-                    Text((if (record.type == RecordType.EXPENSE) "-" else "+") + "¥%.2f".format(record.amount), fontWeight = FontWeight.Bold)
-                    IconButton(onClick = { vm.deleteRecord(record.id) }) { Icon(Icons.Default.Delete, "删除") }
+                    Text(
+                        (if (record.type == RecordType.EXPENSE) "-" else "+") + "¥%.2f".format(
+                            record.amount
+                        ), fontWeight = FontWeight.Bold
+                    )
+                    IconButton(onClick = { vm.deleteRecord(record.id) }) {
+                        Icon(
+                            Icons.Default.Delete,
+                            "删除"
+                        )
+                    }
                 }
             }
         }
@@ -268,27 +342,59 @@ private fun CategoryScreen(modifier: Modifier, vm: BillingViewModel) {
 
     val current = if (selected == CategoryType.EXPENSE) expenseCategories else incomeCategories
 
-    Column(modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(
+        modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilterChip(selected = selected == CategoryType.EXPENSE, onClick = { selected = CategoryType.EXPENSE }, label = { Text("支出分类") })
-            FilterChip(selected = selected == CategoryType.INCOME, onClick = { selected = CategoryType.INCOME }, label = { Text("收入分类") })
+            FilterChip(
+                selected = selected == CategoryType.EXPENSE,
+                onClick = { selected = CategoryType.EXPENSE },
+                label = { Text("支出分类") })
+            FilterChip(
+                selected = selected == CategoryType.INCOME,
+                onClick = { selected = CategoryType.INCOME },
+                label = { Text("收入分类") })
         }
 
-        Button(onClick = { creating = true }) { Text("新增${if (selected == CategoryType.EXPENSE) "支出" else "收入"}分类") }
+        Button(onClick = {
+            creating = true
+        }) { Text("新增${if (selected == CategoryType.EXPENSE) "支出" else "收入"}分类") }
 
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(current, key = { it.id }) { category ->
                 val progress = budgetProgress[category.id]
-                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f))) {
-                    Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                Card(
+                    Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
+                    )
+                ) {
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
                             Text("${category.emoji} ${category.name}")
                             Row {
-                                AssistChip(onClick = { editing = category }, label = { Text("编辑") })
+                                AssistChip(
+                                    onClick = { editing = category },
+                                    label = { Text("编辑") })
                                 Spacer(Modifier.width(6.dp))
                                 AssistChip(onClick = {
                                     vm.deleteCategory(category.id) { ok ->
-                                        Toast.makeText(context, if (ok) "已删除分类" else "该分类已有记录，请先清空数据", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(
+                                            context,
+                                            if (ok) "已删除分类" else "该分类已有记录，请先清空数据",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
                                     }
                                 }, label = { Text("删除") })
                             }
@@ -298,9 +404,14 @@ private fun CategoryScreen(modifier: Modifier, vm: BillingViewModel) {
                             Text("预算：${category.budgetLimit?.let { "¥%.2f".format(it) } ?: "未设置"}")
                             Text("本月已支出：¥%.2f".format(progress?.spent ?: 0.0))
                             if ((category.budgetLimit ?: 0.0) > 0) {
-                                LinearProgressIndicator(progress = { (progress?.ratio ?: 0f).coerceAtMost(1f) }, modifier = Modifier.fillMaxWidth())
+                                LinearProgressIndicator(progress = {
+                                    (progress?.ratio ?: 0f).coerceAtMost(1f)
+                                }, modifier = Modifier.fillMaxWidth())
                                 if ((progress?.ratio ?: 0f) > 1f) {
-                                    Text("已超预算 ${(progress!!.ratio * 100).toInt()}%", color = MaterialTheme.colorScheme.error)
+                                    Text(
+                                        "已超预算 ${(progress!!.ratio * 100).toInt()}%",
+                                        color = MaterialTheme.colorScheme.error
+                                    )
                                 }
                             }
                         }
@@ -354,40 +465,75 @@ private fun AnalysisScreen(modifier: Modifier, vm: BillingViewModel) {
 
     LaunchedEffect(Unit) { vm.refreshTrend() }
 
-    Column(modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(
+        modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
         TabRow(selectedTabIndex = pagerState.currentPage) {
             listOf("概览", "趋势", "分类").forEachIndexed { index, title ->
-                Tab(selected = pagerState.currentPage == index, onClick = { scope.launch { pagerState.animateScrollToPage(index) } }, text = { Text(title) })
+                Tab(
+                    selected = pagerState.currentPage == index,
+                    onClick = { scope.launch { pagerState.animateScrollToPage(index) } },
+                    text = { Text(title) })
             }
         }
 
         HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
             when (page) {
                 0 -> Column(
-                    modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Card(Modifier.fillMaxWidth()) {
-                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Column(
+                            Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
                             Text("当日支出：¥%.2f".format(overview.todayExpense))
                             Text("本月支出：¥%.2f".format(overview.monthExpense))
-                            Text("本月收入：¥%.2f".format(overview.monthIncome), color = Color(0xFF2E7D32))
-                            Text("本月结余：¥%.2f".format(overview.monthBalance), fontWeight = FontWeight.Bold)
+                            Text(
+                                "本月收入：¥%.2f".format(overview.monthIncome),
+                                color = Color(0xFF2E7D32)
+                            )
+                            Text(
+                                "本月结余：¥%.2f".format(overview.monthBalance),
+                                fontWeight = FontWeight.Bold
+                            )
                         }
                     }
                     Card(Modifier.fillMaxWidth()) {
-                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Column(
+                            Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
                             Text("年度结余", fontWeight = FontWeight.SemiBold)
-                            Text("¥%.2f".format(overview.yearBalance), style = MaterialTheme.typography.titleLarge)
+                            Text(
+                                "¥%.2f".format(overview.yearBalance),
+                                style = MaterialTheme.typography.titleLarge
+                            )
                         }
                     }
-                    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.5f))) {
-                        Text("💡 小贴士：持续记录收入和支出，月底能快速掌握结余变化。", Modifier.padding(14.dp))
+                    Card(
+                        Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.5f)
+                        )
+                    ) {
+                        Text(
+                            "💡 小贴士：持续记录收入和支出，月底能快速掌握结余变化。",
+                            Modifier.padding(14.dp)
+                        )
                     }
                 }
 
                 1 -> Column(
-                    modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     TrendCalendarSection(
@@ -400,35 +546,100 @@ private fun AnalysisScreen(modifier: Modifier, vm: BillingViewModel) {
                 }
 
                 else -> Column(
-                    modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.horizontalScroll(rememberScrollState())
+                    ) {
                         TimeRange.entries.forEach { range ->
-                            FilterChip(selected = selectedRange == range, onClick = { vm.setRange(range) }, label = { Text(range.label) })
+                            FilterChip(
+                                selected = selectedRange == range,
+                                onClick = { vm.setRange(range) },
+                                label = { Text(range.label) })
                         }
                     }
 
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilterChip(selected = selectedPieType == RecordType.EXPENSE, onClick = { vm.setPieType(RecordType.EXPENSE) }, label = { Text("支出构成") })
-                        FilterChip(selected = selectedPieType == RecordType.INCOME, onClick = { vm.setPieType(RecordType.INCOME) }, label = { Text("收入构成") })
+                        FilterChip(
+                            selected = selectedPieType == RecordType.EXPENSE,
+                            onClick = { vm.setPieType(RecordType.EXPENSE) },
+                            label = { Text("支出构成") })
+                        FilterChip(
+                            selected = selectedPieType == RecordType.INCOME,
+                            onClick = { vm.setPieType(RecordType.INCOME) },
+                            label = { Text("收入构成") })
                     }
 
                     if (chartData.isEmpty()) {
                         Card(Modifier.fillMaxWidth()) {
-                            Text("当前筛选暂无数据", Modifier.padding(16.dp), textAlign = TextAlign.Center)
+                            Text(
+                                "当前筛选暂无数据",
+                                Modifier.padding(16.dp),
+                                textAlign = TextAlign.Center
+                            )
                         }
                     } else {
-                        PieChartCard(chartData = chartData.map { it.name to it.value })
-                        HorizontalBarChartCard(chartData = chartData.map { it.name to it.value }, title = if (selectedPieType == RecordType.EXPENSE) "支出柱状图" else "收入柱状图")
+                        PieChartCard(
+                            chartData = chartData.map { it.name to it.value }
+                        )
+                        HorizontalBarChartCard(
+                            chartData = chartData.sortedBy { it.value }
+                                .map { it.name to it.value },
+                            title = if (selectedPieType == RecordType.EXPENSE) "支出柱状图" else "收入柱状图"
+                        )
                     }
 
-                    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f))) {
-                        Text("图表说明：点击饼图可查看分类名称；下方柱状图用于对比金额。", Modifier.padding(12.dp))
+                    Card(
+                        Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
+                        )
+                    ) {
+                        Text(
+                            "图表说明：点击饼图可查看分类名称；下方柱状图用于对比金额。",
+                            Modifier.padding(12.dp)
+                        )
                     }
                 }
             }
         }
+    }
+}
+
+object MacaronColors {
+
+    private val macaronHues = mapOf(
+        "房租" to 330f,   // 马卡龙粉
+        "通勤" to 200f,   // Baby蓝
+        "餐饮" to 35f,    // 奶油黄
+        "购物" to 300f,   // 薰衣草紫
+        "娱乐" to 160f,   // 薄荷绿
+        "游戏" to 50f,    // 蜜桃橙
+        "水电" to 140f,   // 抹茶绿
+        "话费" to 260f    // 香芋紫
+    )
+
+    // 扩展色相池（新增分类自动分配）
+    private val extendedHues = listOf(
+        20f, 65f, 110f, 180f, 230f, 280f, 320f, 30f
+    )
+
+    fun generate(name: String): Int {
+        val hue = macaronHues[name] ?: run {
+            val hash = name.fold(0x811c9dc5L) { acc, c ->
+                ((acc xor c.code.toLong()) * 0x01000193L) and 0xffffffffL
+            }
+            extendedHues[(hash % extendedHues.size).toInt()]
+        }
+
+        val saturation = 0.50f  // 中等饱和，甜美
+        val value = 0.88f       // 高亮，奶油感
+
+        return android.graphics.Color.HSVToColor(floatArrayOf(hue, saturation, value))
     }
 }
 
@@ -460,13 +671,19 @@ private fun TrendCalendarSection(
         }
     }
 
-    val dayExpense = selectedDateRecords.filter { it.type == RecordType.EXPENSE }.sumOf { it.amount }
+    val dayExpense =
+        selectedDateRecords.filter { it.type == RecordType.EXPENSE }.sumOf { it.amount }
     val dayIncome = selectedDateRecords.filter { it.type == RecordType.INCOME }.sumOf { it.amount }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             daysOfWeek.forEach { day ->
-                Text(day.name.take(2), modifier = Modifier.weight(1f), textAlign = TextAlign.Center, style = MaterialTheme.typography.labelMedium)
+                Text(
+                    day.name.take(2),
+                    modifier = Modifier.weight(1f),
+                    textAlign = TextAlign.Center,
+                    style = MaterialTheme.typography.labelMedium
+                )
             }
         }
 
@@ -486,8 +703,15 @@ private fun TrendCalendarSection(
         ) {
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("${selectedDate} 收支汇总", fontWeight = FontWeight.SemiBold)
-                Text("当日累计支出：¥%.2f    当日累计收入：¥%.2f".format(dayExpense, dayIncome), style = MaterialTheme.typography.bodySmall)
-                Text("再次点击日期或点击本卡片可展开明细", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    "当日累计支出：¥%.2f    当日累计收入：¥%.2f".format(dayExpense, dayIncome),
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Text(
+                    "再次点击日期或点击本卡片可展开明细",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }
@@ -504,9 +728,18 @@ private fun TrendCalendarSection(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Text("${selectedDate} 收支详情", style = MaterialTheme.typography.titleLarge)
-                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("累计支出：¥%.2f".format(dayExpense), color = MaterialTheme.colorScheme.error)
+                Card(
+                    Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                ) {
+                    Column(
+                        Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            "累计支出：¥%.2f".format(dayExpense),
+                            color = MaterialTheme.colorScheme.error
+                        )
                         Text("累计收入：¥%.2f".format(dayIncome), color = Color(0xFF2E7D32))
                     }
                 }
@@ -517,14 +750,26 @@ private fun TrendCalendarSection(
                     selectedDateRecords.forEach { item ->
                         val category = categories.firstOrNull { it.id == item.categoryId }
                         Card(Modifier.fillMaxWidth()) {
-                            Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Row(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
                                 Column(Modifier.weight(1f)) {
                                     Text("${category?.emoji ?: "🧾"} ${category?.name ?: "未分类"}")
-                                    Text(item.note.ifBlank { "无备注" }, style = MaterialTheme.typography.bodySmall)
+                                    Text(
+                                        item.note.ifBlank { "无备注" },
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
                                 }
                                 Text(
-                                    text = (if (item.type == RecordType.EXPENSE) "-" else "+") + "¥%.2f".format(item.amount),
-                                    color = if (item.type == RecordType.EXPENSE) MaterialTheme.colorScheme.error else Color(0xFF2E7D32),
+                                    text = (if (item.type == RecordType.EXPENSE) "-" else "+") + "¥%.2f".format(
+                                        item.amount
+                                    ),
+                                    color = if (item.type == RecordType.EXPENSE) MaterialTheme.colorScheme.error else Color(
+                                        0xFF2E7D32
+                                    ),
                                     fontWeight = FontWeight.Bold
                                 )
                             }
@@ -544,7 +789,11 @@ private fun TrendDayCell(
     onSelectDate: (LocalDate) -> Unit
 ) {
     if (day.position != DayPosition.MonthDate) {
-        Box(Modifier.size(60.dp).padding(4.dp))
+        Box(
+            Modifier
+                .size(60.dp)
+                .padding(4.dp)
+        )
         return
     }
     val hasExpense = (summary?.expense ?: 0.0) > 0
@@ -558,37 +807,55 @@ private fun TrendDayCell(
     }
 
     Box(modifier = Modifier.padding(4.dp)) {
-    Column(
-        modifier = Modifier
-            .size(52.dp)
-            .background(bg, RoundedCornerShape(10.dp))
-            .clickable { onSelectDate(day.date) }
-            .padding(4.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Text(day.date.dayOfMonth.toString(), style = MaterialTheme.typography.bodySmall)
-        if (hasExpense || hasIncome) {
-            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                if (hasExpense) Box(Modifier.size(5.dp).background(Color(0xFFD32F2F), CircleShape))
-                if (hasIncome) Box(Modifier.size(5.dp).background(Color(0xFF2E7D32), CircleShape))
+        Column(
+            modifier = Modifier
+                .size(52.dp)
+                .background(bg, RoundedCornerShape(10.dp))
+                .clickable { onSelectDate(day.date) }
+                .padding(4.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(day.date.dayOfMonth.toString(), style = MaterialTheme.typography.bodySmall)
+            if (hasExpense || hasIncome) {
+                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                    if (hasExpense) Box(
+                        Modifier
+                            .size(5.dp)
+                            .background(Color(0xFFD32F2F), CircleShape)
+                    )
+                    if (hasIncome) Box(
+                        Modifier
+                            .size(5.dp)
+                            .background(Color(0xFF2E7D32), CircleShape)
+                    )
+                }
+            }
+            val expenseAmount = summary?.expense ?: 0.0
+            if (expenseAmount > 0) {
+                Text(
+                    "¥%.0f".format(expenseAmount),
+                    style = MaterialTheme.typography.labelSmall,
+                    maxLines = 1
+                )
             }
         }
-        val expenseAmount = summary?.expense ?: 0.0
-        if (expenseAmount > 0) {
-            Text("¥%.0f".format(expenseAmount), style = MaterialTheme.typography.labelSmall, maxLines = 1)
-        }
-    }
     }
 }
 
 @Composable
-private fun PieChartCard(chartData: List<Pair<String, Double>>) {
+private fun PieChartCard(
+    chartData: List<Pair<String, Double>>
+) {
     var selectedLabel by remember { mutableStateOf("点击饼图扇区查看分类") }
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("分类占比", fontWeight = FontWeight.SemiBold)
-            Text(selectedLabel, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                selectedLabel,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
             AndroidView(
                 factory = { ctx ->
                     PieChart(ctx).apply {
@@ -602,6 +869,7 @@ private fun PieChartCard(chartData: List<Pair<String, Double>>) {
                                 val p = e as? PieEntry ?: return
                                 selectedLabel = "已选：${p.label}（¥%.2f）".format(p.value)
                             }
+
                             override fun onNothingSelected() {}
                         })
                     }
@@ -609,13 +877,9 @@ private fun PieChartCard(chartData: List<Pair<String, Double>>) {
                 update = { chart ->
                     val entries = chartData.map { PieEntry(it.second.toFloat(), it.first) }
                     val dataSet = PieDataSet(entries, "").apply {
-                        colors = listOf(
-                            android.graphics.Color.parseColor("#EF5350"),
-                            android.graphics.Color.parseColor("#42A5F5"),
-                            android.graphics.Color.parseColor("#66BB6A"),
-                            android.graphics.Color.parseColor("#FFCA28"),
-                            android.graphics.Color.parseColor("#AB47BC")
-                        )
+                        colors = chartData.map { (name, _) ->
+                            MacaronColors.generate(name)
+                        }
                         valueTextSize = 12f
                     }
                     chart.data = PieData(dataSet).apply {
@@ -632,7 +896,10 @@ private fun PieChartCard(chartData: List<Pair<String, Double>>) {
 }
 
 @Composable
-private fun HorizontalBarChartCard(chartData: List<Pair<String, Double>>, title: String) {
+private fun HorizontalBarChartCard(
+    chartData: List<Pair<String, Double>>,
+    title: String
+) {
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(title, fontWeight = FontWeight.SemiBold)
@@ -647,17 +914,25 @@ private fun HorizontalBarChartCard(chartData: List<Pair<String, Double>>, title:
                     }
                 },
                 update = { chart ->
-                    val entries = chartData.mapIndexed { idx, pair -> BarEntry(idx.toFloat(), pair.second.toFloat()) }
+                    val entries = chartData.mapIndexed { idx, pair ->
+                        BarEntry(
+                            idx.toFloat(),
+                            pair.second.toFloat()
+                        )
+                    }
                     val dataSet = BarDataSet(entries, title).apply {
-                        color = android.graphics.Color.parseColor("#8C4A00")
+                        colors = chartData.map { (name, _) ->
+                            MacaronColors.generate(name)
+                        }
                         valueTextSize = 11f
                     }
-                    chart.xAxis.valueFormatter = object : com.github.mikephil.charting.formatter.ValueFormatter() {
-                        override fun getFormattedValue(value: Float): String {
-                            val i = value.toInt()
-                            return chartData.getOrNull(i)?.first ?: ""
+                    chart.xAxis.valueFormatter =
+                        object : com.github.mikephil.charting.formatter.ValueFormatter() {
+                            override fun getFormattedValue(value: Float): String {
+                                val i = value.toInt()
+                                return chartData.getOrNull(i)?.first ?: ""
+                            }
                         }
-                    }
                     chart.data = BarData(dataSet)
                     chart.invalidate()
                 },
@@ -671,7 +946,11 @@ private fun HorizontalBarChartCard(chartData: List<Pair<String, Double>>, title:
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AddRecordSheet(vm: BillingViewModel, onDismiss: () -> Unit, onAdd: (Double, Long, RecordType, String) -> Unit) {
+private fun AddRecordSheet(
+    vm: BillingViewModel,
+    onDismiss: () -> Unit,
+    onAdd: (Double, Long, RecordType, String) -> Unit
+) {
     val expenseCategories by vm.expenseCategories.collectAsStateWithLifecycle()
     val incomeCategories by vm.incomeCategories.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
@@ -707,23 +986,50 @@ private fun AddRecordSheet(vm: BillingViewModel, onDismiss: () -> Unit, onAdd: (
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Text("记一笔", style = MaterialTheme.typography.titleLarge)
-            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-                Text("¥$amount", Modifier.fillMaxWidth().padding(18.dp), style = MaterialTheme.typography.headlineMedium, textAlign = TextAlign.End)
+            Card(
+                Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                Text(
+                    "¥$amount",
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(18.dp),
+                    style = MaterialTheme.typography.headlineMedium,
+                    textAlign = TextAlign.End
+                )
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(selected = type == RecordType.EXPENSE, onClick = { type = RecordType.EXPENSE }, label = { Text("支出") })
-                FilterChip(selected = type == RecordType.INCOME, onClick = { type = RecordType.INCOME }, label = { Text("收入") })
+                FilterChip(
+                    selected = type == RecordType.EXPENSE,
+                    onClick = { type = RecordType.EXPENSE },
+                    label = { Text("支出") })
+                FilterChip(
+                    selected = type == RecordType.INCOME,
+                    onClick = { type = RecordType.INCOME },
+                    label = { Text("收入") })
             }
 
             Text(if (type == RecordType.EXPENSE) "支出分类" else "收入分类")
-            Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 categoryList.forEach { category ->
-                    FilterChip(selected = selectedCategory == category.id, onClick = { selectedCategory = category.id }, label = { Text("${category.emoji} ${category.name}") })
+                    FilterChip(
+                        selected = selectedCategory == category.id,
+                        onClick = { selectedCategory = category.id },
+                        label = { Text("${category.emoji} ${category.name}") })
                 }
             }
 
-            OutlinedTextField(value = note, onValueChange = { note = it }, label = { Text("备注") }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(
+                value = note,
+                onValueChange = { note = it },
+                label = { Text("备注") },
+                modifier = Modifier.fillMaxWidth()
+            )
 
             NumberPad(
                 onDigit = ::inputDigit,
@@ -745,7 +1051,12 @@ private fun AddRecordSheet(vm: BillingViewModel, onDismiss: () -> Unit, onAdd: (
 }
 
 @Composable
-private fun NumberPad(onDigit: (String) -> Unit, onDot: () -> Unit, onBackspace: () -> Unit, onClear: () -> Unit) {
+private fun NumberPad(
+    onDigit: (String) -> Unit,
+    onDot: () -> Unit,
+    onBackspace: () -> Unit,
+    onClear: () -> Unit
+) {
     val rows = listOf(
         listOf("7", "8", "9", "⌫"),
         listOf("4", "5", "6", "C"),
@@ -755,7 +1066,10 @@ private fun NumberPad(onDigit: (String) -> Unit, onDot: () -> Unit, onBackspace:
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         rows.forEach { row ->
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
                 row.forEach { key ->
                     Button(
                         onClick = {
@@ -799,8 +1113,14 @@ private fun CategoryDialog(
         title = { Text(title) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("名称") })
-                OutlinedTextField(value = emoji, onValueChange = { emoji = it }, label = { Text("Emoji") })
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("名称") })
+                OutlinedTextField(
+                    value = emoji,
+                    onValueChange = { emoji = it },
+                    label = { Text("Emoji") })
                 if (isExpense) {
                     OutlinedTextField(
                         value = budgetInput,

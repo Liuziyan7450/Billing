@@ -51,10 +51,13 @@ class BillingRepository(private val dao: BillingDao) {
         if (dao.countCategories() > 0) return
         listOf(
             "餐饮" to "🍜",
-            "交通" to "🚌",
+            "通勤" to "\uD83D\uDE97",
             "购物" to "🛍️",
-            "住房" to "🏠",
-            "娱乐" to "🎮"
+            "房租" to "🏠",
+            "水电" to "\uD83D\uDCA7",
+            "话费" to "\uD83D\uDCF1",
+            "游戏" to "🎮",
+            "娱乐" to "🎬"
         ).forEach { (name, emoji) -> addCategory(name, emoji, CategoryType.EXPENSE, null) }
 
         listOf(
