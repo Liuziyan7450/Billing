@@ -29,8 +29,17 @@ enum class CategoryType { EXPENSE, INCOME }
 
 @Serializable
 data class BackupData(
+    val metadata: BackupMetadata = BackupMetadata(),
     val categories: List<BackupCategory>,
     val records: List<BackupRecord>
+)
+
+@Serializable
+data class BackupMetadata(
+    val exportId: String = "",
+    val exportedAt: Long = System.currentTimeMillis(),
+    val timezone: String = "",
+    val schemaVersion: Int = 2
 )
 
 @Serializable
@@ -39,7 +48,9 @@ data class BackupCategory(
     val name: String,
     val emoji: String,
     val categoryType: String = CategoryType.EXPENSE.name,
-    val budgetLimit: Double? = null
+    val budgetLimit: Double? = null,
+    val uid: String? = null,
+    val createdAt: Long? = null
 )
 
 @Serializable
@@ -48,5 +59,9 @@ data class BackupRecord(
     val categoryId: Long,
     val type: String,
     val note: String,
-    val timestamp: Long
+    val timestamp: Long,
+    val uid: String? = null,
+    val dateLabel: String? = null,
+    val categoryUid: String? = null,
+    val createdAt: Long? = null
 )

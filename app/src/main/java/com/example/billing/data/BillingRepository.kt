@@ -7,6 +7,8 @@ import kotlinx.serialization.json.Json
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.UUID
 
 class BillingRepository(private val dao: BillingDao) {
     val categories = dao.observeCategories()
@@ -94,34 +96,134 @@ class BillingRepository(private val dao: BillingDao) {
     }
 
     suspend fun exportJson(): String {
-        val categories = dao.observeCategories().first().map {
-            BackupCategory(it.id, it.name, it.emoji, it.categoryType.name, it.budgetLimit)
+        val localCategories = dao.observeCategories().first()
+        val localRecords = dao.observeAllRecords().first()
+
+        val categoryUidMap = localCategories.associate { category ->
+            category.id to stableCategoryUid(category.name, category.categoryType)
         }
-        val records = dao.observeAllRecords().first().map {
-            BackupRecord(it.amount, it.categoryId, it.type.name, it.note, it.timestamp)
+
+        val categories = localCategories.map { category ->
+            BackupCategory(
+                id = category.id,
+                name = category.name,
+                emoji = category.emoji,
+                categoryType = category.categoryType.name,
+                budgetLimit = category.budgetLimit,
+                uid = stableCategoryUid(category.name, category.categoryType),
+                createdAt = System.currentTimeMillis()
+            )
         }
-        return Json { prettyPrint = true }.encodeToString(BackupData(categories, records))
+
+        val records = localRecords.map { record ->
+            BackupRecord(
+                amount = record.amount,
+                categoryId = record.categoryId,
+                type = record.type.name,
+                note = record.note,
+                timestamp = record.timestamp,
+                uid = stableRecordUid(record),
+                dateLabel = Instant.ofEpochMilli(record.timestamp)
+                    .atZone(ZoneId.systemDefault())
+                    .toLocalDate().format(DateTimeFormatter.ISO_DATE),
+                categoryUid = categoryUidMap[record.categoryId],
+                createdAt = record.timestamp
+            )
+        }
+
+        val metadata = BackupMetadata(
+            exportId = UUID.randomUUID().toString(),
+            exportedAt = System.currentTimeMillis(),
+            timezone = ZoneId.systemDefault().id,
+            schemaVersion = 2
+        )
+
+        return Json { prettyPrint = true }.encodeToString(BackupData(metadata, categories, records))
     }
 
+    /**
+     * 全量导入（合并策略）
+     * - 不清空本地数据
+     * - 分类按 uid（或类型+名称）合并
+     * - 记录按 uid（或稳定指纹）去重后追加
+     */
     suspend fun importJson(json: String): Result<Unit> = runCatching {
         val parsed = Json { ignoreUnknownKeys = true }.decodeFromString<BackupData>(json)
-        dao.clearRecords()
-        dao.clearCategories()
-        dao.insertCategories(parsed.categories.map {
-            CategoryEntity(it.id, it.name, it.emoji, CategoryType.valueOf(it.categoryType), it.budgetLimit)
-        })
-        dao.insertRecords(parsed.records.map {
-            RecordEntity(
-                amount = it.amount,
-                categoryId = it.categoryId,
-                type = RecordType.valueOf(it.type),
-                note = it.note,
-                timestamp = it.timestamp
+
+        val localCategories = dao.observeCategories().first().toMutableList()
+        val localRecords = dao.observeAllRecords().first().toMutableList()
+
+        val categoryByUid = localCategories.associateBy { stableCategoryUid(it.name, it.categoryType) }.toMutableMap()
+        val categoryIdByRemoteId = mutableMapOf<Long, Long>()
+
+        parsed.categories.forEach { backupCategory ->
+            val cType = runCatching { CategoryType.valueOf(backupCategory.categoryType) }.getOrDefault(CategoryType.EXPENSE)
+            val uid = backupCategory.uid ?: stableCategoryUid(backupCategory.name, cType)
+            val existing = categoryByUid[uid]
+            if (existing != null) {
+                categoryIdByRemoteId[backupCategory.id] = existing.id
+                if (existing.budgetLimit != backupCategory.budgetLimit || existing.emoji != backupCategory.emoji || existing.name != backupCategory.name) {
+                    dao.updateCategory(existing.copy(name = backupCategory.name, emoji = backupCategory.emoji, budgetLimit = backupCategory.budgetLimit))
+                }
+            } else {
+                dao.insertCategory(
+                    CategoryEntity(
+                        name = backupCategory.name,
+                        emoji = backupCategory.emoji,
+                        categoryType = cType,
+                        budgetLimit = backupCategory.budgetLimit
+                    )
+                )
+                val refreshed = dao.observeCategories().first().last()
+                categoryByUid[uid] = refreshed
+                categoryIdByRemoteId[backupCategory.id] = refreshed.id
+            }
+        }
+
+        val localRecordFingerprints = localRecords.map { stableRecordUid(it) }.toMutableSet()
+
+        parsed.records.forEach { backupRecord ->
+            val mappedCategoryId = when {
+                backupRecord.categoryUid != null -> {
+                    val c = categoryByUid[backupRecord.categoryUid]
+                    c?.id
+                }
+                else -> categoryIdByRemoteId[backupRecord.categoryId]
+            } ?: return@forEach
+
+            val type = runCatching { RecordType.valueOf(backupRecord.type) }.getOrDefault(RecordType.EXPENSE)
+            val candidate = RecordEntity(
+                amount = backupRecord.amount,
+                categoryId = mappedCategoryId,
+                type = type,
+                note = backupRecord.note,
+                timestamp = backupRecord.timestamp
             )
-        })
+            val uid = backupRecord.uid ?: stableRecordUid(candidate)
+            if (uid !in localRecordFingerprints) {
+                dao.insertRecord(candidate)
+                localRecordFingerprints += uid
+            }
+        }
     }
 
     companion object {
+        private fun stableCategoryUid(name: String, type: CategoryType): String {
+            val raw = "${type.name}|${name.trim().lowercase()}"
+            return UUID.nameUUIDFromBytes(raw.toByteArray()).toString()
+        }
+
+        private fun stableRecordUid(record: RecordEntity): String {
+            val raw = listOf(
+                record.timestamp.toString(),
+                record.amount.toString(),
+                record.type.name,
+                record.categoryId.toString(),
+                record.note.trim()
+            ).joinToString("|")
+            return UUID.nameUUIDFromBytes(raw.toByteArray()).toString()
+        }
+
         private fun dayRange(day: LocalDate): Pair<Long, Long> {
             val start = day.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
             val end = day.plusDays(1).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli() - 1
