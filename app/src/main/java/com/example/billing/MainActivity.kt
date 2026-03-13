@@ -31,6 +31,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Analytics
 import androidx.compose.material.icons.filled.Delete
@@ -144,7 +145,7 @@ private fun AppScreen(vm: BillingViewModel) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("简记账") },
+                title = { Text("皓运账本") },
                 actions = {
                     Box {
                         IconButton(onClick = { showDataMenu = true }) {
@@ -178,7 +179,7 @@ private fun AppScreen(vm: BillingViewModel) {
         bottomBar = {
             NavigationBar {
                 NavigationBarItem(selected = tab == 0, onClick = { tab = 0 }, icon = { Icon(Icons.Default.Home, null) }, label = { Text("首页") })
-                NavigationBarItem(selected = tab == 1, onClick = { tab = 1 }, icon = { Icon(Icons.Default.List, null) }, label = { Text("分类") })
+                NavigationBarItem(selected = tab == 1, onClick = { tab = 1 }, icon = { Icon(Icons.AutoMirrored.Filled.List, null) }, label = { Text("分类") })
                 NavigationBarItem(selected = tab == 2, onClick = { tab = 2 }, icon = { Icon(Icons.Default.Analytics, null) }, label = { Text("统计") })
             }
         }
@@ -532,10 +533,10 @@ private fun TrendDayCell(
 
     Column(
         modifier = Modifier
-            .size(54.dp)
-            .background(bg, RoundedCornerShape(10.dp))
+            .size(60.dp)
+            .background(bg, RoundedCornerShape(20.dp))
             .clickable { onSelectDate(day.date) }
-            .padding(4.dp),
+            .padding(0.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
@@ -625,7 +626,7 @@ private fun AddRecordSheet(vm: BillingViewModel, onDismiss: () -> Unit, onAdd: (
         Column(
             Modifier
                 .fillMaxWidth()
-                .fillMaxHeight(0.94f)
+                .fillMaxHeight(0.9f)
                 .padding(16.dp)
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(10.dp)
