@@ -34,6 +34,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Analytics
 import androidx.compose.material.icons.filled.Delete
@@ -157,7 +158,7 @@ private fun AppScreen(vm: BillingViewModel) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("简记账") },
+                title = { Text("皓运账本") },
                 actions = {
                     Box {
                         IconButton(onClick = { showDataMenu = true }) {
@@ -700,7 +701,7 @@ private fun AddRecordSheet(vm: BillingViewModel, onDismiss: () -> Unit, onAdd: (
         Column(
             Modifier
                 .fillMaxWidth()
-                .fillMaxHeight(0.94f)
+                .fillMaxHeight(0.9f)
                 .padding(16.dp)
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(10.dp)
