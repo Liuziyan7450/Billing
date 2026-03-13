@@ -8,6 +8,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -26,6 +27,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
@@ -90,11 +93,18 @@ import com.example.billing.data.TimeRange
 import com.example.billing.theme.BillingTheme
 import com.example.billing.viewmodel.BillingViewModel
 import com.example.billing.viewmodel.BillingViewModelFactory
+import com.github.mikephil.charting.charts.HorizontalBarChart
 import com.github.mikephil.charting.charts.PieChart
+import com.github.mikephil.charting.data.BarData
+import com.github.mikephil.charting.data.BarDataSet
+import com.github.mikephil.charting.data.BarEntry
 import com.github.mikephil.charting.data.PieData
 import com.github.mikephil.charting.data.PieDataSet
+import com.github.mikephil.charting.data.Entry
 import com.github.mikephil.charting.data.PieEntry
 import com.github.mikephil.charting.formatter.PercentFormatter
+import com.github.mikephil.charting.highlight.Highlight
+import com.github.mikephil.charting.listener.OnChartValueSelectedListener
 import com.kizitonwose.calendar.compose.HorizontalCalendar
 import com.kizitonwose.calendar.compose.rememberCalendarState
 import com.kizitonwose.calendar.core.CalendarDay
@@ -119,10 +129,13 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 private fun AppScreen(vm: BillingViewModel) {
-    var tab by rememberSaveable { mutableStateOf(0) }
+    val pagerState = rememberPagerState(initialPage = 0, pageCount = { 3 })
+    val scope = rememberCoroutineScope()
+    val tab = pagerState.currentPage
+
     var showSheet by remember { mutableStateOf(false) }
     val context = LocalContext.current
     var showDataMenu by remember { mutableStateOf(false) }
@@ -152,20 +165,14 @@ private fun AppScreen(vm: BillingViewModel) {
                             Icon(Icons.Default.MoreVert, contentDescription = "数据操作")
                         }
                         DropdownMenu(expanded = showDataMenu, onDismissRequest = { showDataMenu = false }) {
-                            DropdownMenuItem(
-                                text = { Text("导入备份（JSON）") },
-                                onClick = {
-                                    showDataMenu = false
-                                    openDocument.launch(arrayOf("application/json"))
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("导出备份（JSON）") },
-                                onClick = {
-                                    showDataMenu = false
-                                    createDocument.launch("billing-backup.json")
-                                }
-                            )
+                            DropdownMenuItem(text = { Text("导入备份（JSON）") }, onClick = {
+                                showDataMenu = false
+                                openDocument.launch(arrayOf("application/json"))
+                            })
+                            DropdownMenuItem(text = { Text("导出备份（JSON）") }, onClick = {
+                                showDataMenu = false
+                                createDocument.launch("billing-backup.json")
+                            })
                         }
                     }
                 }
@@ -178,16 +185,18 @@ private fun AppScreen(vm: BillingViewModel) {
         },
         bottomBar = {
             NavigationBar {
-                NavigationBarItem(selected = tab == 0, onClick = { tab = 0 }, icon = { Icon(Icons.Default.Home, null) }, label = { Text("首页") })
-                NavigationBarItem(selected = tab == 1, onClick = { tab = 1 }, icon = { Icon(Icons.AutoMirrored.Filled.List, null) }, label = { Text("分类") })
-                NavigationBarItem(selected = tab == 2, onClick = { tab = 2 }, icon = { Icon(Icons.Default.Analytics, null) }, label = { Text("统计") })
+                NavigationBarItem(selected = tab == 0, onClick = { scope.launch { pagerState.animateScrollToPage(0) } }, icon = { Icon(Icons.Default.Home, null) }, label = { Text("首页") })
+                NavigationBarItem(selected = tab == 1, onClick = { scope.launch { pagerState.animateScrollToPage(1) } }, icon = { Icon(Icons.Default.List, null) }, label = { Text("分类") })
+                NavigationBarItem(selected = tab == 2, onClick = { scope.launch { pagerState.animateScrollToPage(2) } }, icon = { Icon(Icons.Default.Analytics, null) }, label = { Text("统计") })
             }
         }
     ) { padding ->
-        when (tab) {
-            0 -> HomeScreen(modifier = Modifier.padding(padding), vm = vm)
-            1 -> CategoryScreen(modifier = Modifier.padding(padding), vm = vm)
-            else -> AnalysisScreen(modifier = Modifier.padding(padding), vm = vm)
+        HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize().padding(padding)) { page ->
+            when (page) {
+                0 -> HomeScreen(modifier = Modifier.fillMaxSize(), vm = vm)
+                1 -> CategoryScreen(modifier = Modifier.fillMaxSize(), vm = vm)
+                else -> AnalysisScreen(modifier = Modifier.fillMaxSize(), vm = vm)
+            }
         }
     }
 
@@ -328,9 +337,12 @@ private fun CategoryScreen(modifier: Modifier, vm: BillingViewModel) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 private fun AnalysisScreen(modifier: Modifier, vm: BillingViewModel) {
-    var tab by remember { mutableStateOf(0) }
+    val pagerState = rememberPagerState(initialPage = 0, pageCount = { 3 })
+    val scope = rememberCoroutineScope()
+
     val overview by vm.analysisHeader.collectAsStateWithLifecycle()
     val trend by vm.monthlyTrend.collectAsStateWithLifecycle()
     val selectedDate by vm.selectedDateState.collectAsStateWithLifecycle()
@@ -343,63 +355,77 @@ private fun AnalysisScreen(modifier: Modifier, vm: BillingViewModel) {
     LaunchedEffect(Unit) { vm.refreshTrend() }
 
     Column(modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        TabRow(selectedTabIndex = tab) {
+        TabRow(selectedTabIndex = pagerState.currentPage) {
             listOf("概览", "趋势", "分类").forEachIndexed { index, title ->
-                Tab(selected = tab == index, onClick = { tab = index }, text = { Text(title) })
+                Tab(selected = pagerState.currentPage == index, onClick = { scope.launch { pagerState.animateScrollToPage(index) } }, text = { Text(title) })
             }
         }
 
-        when (tab) {
-            0 -> {
-                Card(Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("当日支出：¥%.2f".format(overview.todayExpense))
-                        Text("本月支出：¥%.2f".format(overview.monthExpense))
-                        Text("本月收入：¥%.2f".format(overview.monthIncome), color = Color(0xFF2E7D32))
-                        Text("本月结余：¥%.2f".format(overview.monthBalance), fontWeight = FontWeight.Bold)
-                    }
-                }
-                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.5f))) {
-                    Text("💡 小贴士：持续记录收入和支出，月底能快速掌握结余变化。", Modifier.padding(14.dp))
-                }
-            }
-
-            1 -> {
-                TrendCalendarSection(
-                    trend = trend,
-                    selectedDate = selectedDate,
-                    onSelectDate = vm::selectDate,
-                    selectedDateRecords = selectedDateRecords,
-                    categories = categories
-                )
-            }
-
-            else -> {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
-                    TimeRange.entries.forEach { range ->
-                        FilterChip(
-                            selected = selectedRange == range,
-                            onClick = { vm.setRange(range) },
-                            label = { Text(range.label) }
-                        )
-                    }
-                }
-
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(selected = selectedPieType == RecordType.EXPENSE, onClick = { vm.setPieType(RecordType.EXPENSE) }, label = { Text("支出构成") })
-                    FilterChip(selected = selectedPieType == RecordType.INCOME, onClick = { vm.setPieType(RecordType.INCOME) }, label = { Text("收入构成") })
-                }
-
-                if (chartData.isEmpty()) {
+        HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
+            when (page) {
+                0 -> Column(
+                    modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
                     Card(Modifier.fillMaxWidth()) {
-                        Text("当前筛选暂无数据", Modifier.padding(16.dp), textAlign = TextAlign.Center)
+                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("当日支出：¥%.2f".format(overview.todayExpense))
+                            Text("本月支出：¥%.2f".format(overview.monthExpense))
+                            Text("本月收入：¥%.2f".format(overview.monthIncome), color = Color(0xFF2E7D32))
+                            Text("本月结余：¥%.2f".format(overview.monthBalance), fontWeight = FontWeight.Bold)
+                        }
                     }
-                } else {
-                    PieChartCard(chartData = chartData.map { it.name to it.value })
+                    Card(Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("年度结余", fontWeight = FontWeight.SemiBold)
+                            Text("¥%.2f".format(overview.yearBalance), style = MaterialTheme.typography.titleLarge)
+                        }
+                    }
+                    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.5f))) {
+                        Text("💡 小贴士：持续记录收入和支出，月底能快速掌握结余变化。", Modifier.padding(14.dp))
+                    }
                 }
 
-                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f))) {
-                    Text("图表说明：高亮按钮表示当前统计维度，饼图展示各分类占比。", Modifier.padding(12.dp))
+                1 -> Column(
+                    modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    TrendCalendarSection(
+                        trend = trend,
+                        selectedDate = selectedDate,
+                        onSelectDate = vm::selectDate,
+                        selectedDateRecords = selectedDateRecords,
+                        categories = categories
+                    )
+                }
+
+                else -> Column(
+                    modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                        TimeRange.entries.forEach { range ->
+                            FilterChip(selected = selectedRange == range, onClick = { vm.setRange(range) }, label = { Text(range.label) })
+                        }
+                    }
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(selected = selectedPieType == RecordType.EXPENSE, onClick = { vm.setPieType(RecordType.EXPENSE) }, label = { Text("支出构成") })
+                        FilterChip(selected = selectedPieType == RecordType.INCOME, onClick = { vm.setPieType(RecordType.INCOME) }, label = { Text("收入构成") })
+                    }
+
+                    if (chartData.isEmpty()) {
+                        Card(Modifier.fillMaxWidth()) {
+                            Text("当前筛选暂无数据", Modifier.padding(16.dp), textAlign = TextAlign.Center)
+                        }
+                    } else {
+                        PieChartCard(chartData = chartData.map { it.name to it.value })
+                        HorizontalBarChartCard(chartData = chartData.map { it.name to it.value }, title = if (selectedPieType == RecordType.EXPENSE) "支出柱状图" else "收入柱状图")
+                    }
+
+                    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f))) {
+                        Text("图表说明：点击饼图可查看分类名称；下方柱状图用于对比金额。", Modifier.padding(12.dp))
+                    }
                 }
             }
         }
@@ -518,7 +544,7 @@ private fun TrendDayCell(
     onSelectDate: (LocalDate) -> Unit
 ) {
     if (day.position != DayPosition.MonthDate) {
-        Box(Modifier.size(54.dp))
+        Box(Modifier.size(60.dp).padding(4.dp))
         return
     }
     val hasExpense = (summary?.expense ?: 0.0) > 0
@@ -531,12 +557,13 @@ private fun TrendDayCell(
         else -> MaterialTheme.colorScheme.surfaceVariant
     }
 
+    Box(modifier = Modifier.padding(4.dp)) {
     Column(
         modifier = Modifier
-            .size(60.dp)
-            .background(bg, RoundedCornerShape(20.dp))
+            .size(52.dp)
+            .background(bg, RoundedCornerShape(10.dp))
             .clickable { onSelectDate(day.date) }
-            .padding(0.dp),
+            .padding(4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
@@ -552,13 +579,16 @@ private fun TrendDayCell(
             Text("¥%.0f".format(expenseAmount), style = MaterialTheme.typography.labelSmall, maxLines = 1)
         }
     }
+    }
 }
 
 @Composable
 private fun PieChartCard(chartData: List<Pair<String, Double>>) {
+    var selectedLabel by remember { mutableStateOf("点击饼图扇区查看分类") }
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("分类占比", fontWeight = FontWeight.SemiBold)
+            Text(selectedLabel, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             AndroidView(
                 factory = { ctx ->
                     PieChart(ctx).apply {
@@ -567,6 +597,13 @@ private fun PieChartCard(chartData: List<Pair<String, Double>>) {
                         setDrawEntryLabels(false)
                         legend.isWordWrapEnabled = true
                         holeRadius = 55f
+                        setOnChartValueSelectedListener(object : OnChartValueSelectedListener {
+                            override fun onValueSelected(e: Entry?, h: Highlight?) {
+                                val p = e as? PieEntry ?: return
+                                selectedLabel = "已选：${p.label}（¥%.2f）".format(p.value)
+                            }
+                            override fun onNothingSelected() {}
+                        })
                     }
                 },
                 update = { chart ->
@@ -589,6 +626,44 @@ private fun PieChartCard(chartData: List<Pair<String, Double>>) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(260.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun HorizontalBarChartCard(chartData: List<Pair<String, Double>>, title: String) {
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(title, fontWeight = FontWeight.SemiBold)
+            AndroidView(
+                factory = { ctx ->
+                    HorizontalBarChart(ctx).apply {
+                        description.isEnabled = false
+                        legend.isEnabled = false
+                        axisRight.isEnabled = false
+                        xAxis.granularity = 1f
+                        setFitBars(true)
+                    }
+                },
+                update = { chart ->
+                    val entries = chartData.mapIndexed { idx, pair -> BarEntry(idx.toFloat(), pair.second.toFloat()) }
+                    val dataSet = BarDataSet(entries, title).apply {
+                        color = android.graphics.Color.parseColor("#8C4A00")
+                        valueTextSize = 11f
+                    }
+                    chart.xAxis.valueFormatter = object : com.github.mikephil.charting.formatter.ValueFormatter() {
+                        override fun getFormattedValue(value: Float): String {
+                            val i = value.toInt()
+                            return chartData.getOrNull(i)?.first ?: ""
+                        }
+                    }
+                    chart.data = BarData(dataSet)
+                    chart.invalidate()
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(280.dp)
             )
         }
     }

@@ -75,10 +75,16 @@ class BillingViewModel(private val repository: BillingRepository) : ViewModel() 
             val date = Instant.ofEpochMilli(it.timestamp).atZone(ZoneId.systemDefault()).toLocalDate()
             date.year == now.year && date.month == now.month
         }
+        val yearRecords = all.filter {
+            val date = Instant.ofEpochMilli(it.timestamp).atZone(ZoneId.systemDefault()).toLocalDate()
+            date.year == now.year
+        }
         val monthExpense = monthRecords.filter { it.type == RecordType.EXPENSE }.sumOf { it.amount }
         val monthIncome = monthRecords.filter { it.type == RecordType.INCOME }.sumOf { it.amount }
+        val yearExpense = yearRecords.filter { it.type == RecordType.EXPENSE }.sumOf { it.amount }
+        val yearIncome = yearRecords.filter { it.type == RecordType.INCOME }.sumOf { it.amount }
         val todayExpense = today.filter { it.type == RecordType.EXPENSE }.sumOf { it.amount }
-        Overview(todayExpense, monthExpense, monthIncome, monthIncome - monthExpense)
+        Overview(todayExpense, monthExpense, monthIncome, monthIncome - monthExpense, yearIncome - yearExpense)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), Overview())
 
     val selectedRangeState: StateFlow<TimeRange> = selectedRange
@@ -149,7 +155,8 @@ class BillingViewModel(private val repository: BillingRepository) : ViewModel() 
         val todayExpense: Double = 0.0,
         val monthExpense: Double = 0.0,
         val monthIncome: Double = 0.0,
-        val monthBalance: Double = 0.0
+        val monthBalance: Double = 0.0,
+        val yearBalance: Double = 0.0
     )
 }
 
