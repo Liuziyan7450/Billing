@@ -406,6 +406,7 @@ private fun AnalysisScreen(modifier: Modifier, vm: BillingViewModel) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun TrendCalendarSection(
     trend: Map<LocalDate, com.example.billing.data.DaySummary>,
@@ -423,6 +424,18 @@ private fun TrendCalendarSection(
         firstVisibleMonth = currentMonth,
         firstDayOfWeek = firstDayOfWeek
     )
+    var showDetailSheet by remember { mutableStateOf(false) }
+
+    fun openDetailFor(date: LocalDate) {
+        if (date == selectedDate) {
+            showDetailSheet = true
+        } else {
+            onSelectDate(date)
+        }
+    }
+
+    val dayExpense = selectedDateRecords.filter { it.type == RecordType.EXPENSE }.sumOf { it.amount }
+    val dayIncome = selectedDateRecords.filter { it.type == RecordType.INCOME }.sumOf { it.amount }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -434,23 +447,62 @@ private fun TrendCalendarSection(
         HorizontalCalendar(
             state = calendarState,
             dayContent = { day ->
-                TrendDayCell(day, trend[day.date], selectedDate == day.date, onSelectDate)
+                TrendDayCell(day, trend[day.date], selectedDate == day.date) { clicked ->
+                    openDetailFor(clicked)
+                }
             }
         )
 
-        Card(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("${selectedDate} 收支明细", fontWeight = FontWeight.SemiBold)
-                val dayExpense = selectedDateRecords.filter { it.type == RecordType.EXPENSE }.sumOf { it.amount }
-                val dayIncome = selectedDateRecords.filter { it.type == RecordType.INCOME }.sumOf { it.amount }
+        Card(
+            Modifier
+                .fillMaxWidth()
+                .clickable { showDetailSheet = true }
+        ) {
+            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("${selectedDate} 收支汇总", fontWeight = FontWeight.SemiBold)
                 Text("当日累计支出：¥%.2f    当日累计收入：¥%.2f".format(dayExpense, dayIncome), style = MaterialTheme.typography.bodySmall)
+                Text("再次点击日期或点击本卡片可展开明细", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+
+    if (showDetailSheet) {
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ModalBottomSheet(onDismissRequest = { showDetailSheet = false }, sheetState = sheetState) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.9f)
+                    .padding(16.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text("${selectedDate} 收支详情", style = MaterialTheme.typography.titleLarge)
+                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("累计支出：¥%.2f".format(dayExpense), color = MaterialTheme.colorScheme.error)
+                        Text("累计收入：¥%.2f".format(dayIncome), color = Color(0xFF2E7D32))
+                    }
+                }
+
                 if (selectedDateRecords.isEmpty()) {
-                    Text("当天暂无记录")
+                    Card(Modifier.fillMaxWidth()) { Text("当天暂无记录", Modifier.padding(14.dp)) }
                 } else {
                     selectedDateRecords.forEach { item ->
-                        val categoryName = categories.firstOrNull { it.id == item.categoryId }?.name ?: "未分类"
-                        val label = if (item.type == RecordType.EXPENSE) "支出" else "收入"
-                        Text("$label/${categoryName}  ¥%.2f  ${item.note}".format(item.amount))
+                        val category = categories.firstOrNull { it.id == item.categoryId }
+                        Card(Modifier.fillMaxWidth()) {
+                            Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("${category?.emoji ?: "🧾"} ${category?.name ?: "未分类"}")
+                                    Text(item.note.ifBlank { "无备注" }, style = MaterialTheme.typography.bodySmall)
+                                }
+                                Text(
+                                    text = (if (item.type == RecordType.EXPENSE) "-" else "+") + "¥%.2f".format(item.amount),
+                                    color = if (item.type == RecordType.EXPENSE) MaterialTheme.colorScheme.error else Color(0xFF2E7D32),
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
                     }
                 }
             }
